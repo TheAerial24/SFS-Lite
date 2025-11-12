@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lite Spaceflight Sim</title>
+    <style>
+        /* Basic CSS to make the game full-screen */
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000; /* Black background for space */
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // --- 1. SETUP THE CANVAS ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas to full-screen
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // --- 2. THE SHIP OBJECT ---
+        // This object will hold all the info about our ship
+        const ship = {
+            x: canvas.width / 2,  // Start in the middle
+            y: canvas.height / 2, // Start in the middle
+            vx: 0,                // Velocity X (starts at 0)
+            vy: 0,                // Velocity Y (starts at 0)
+            angle: -Math.PI / 2,  // Angle (points "up" by default)
+            rotationSpeed: 0.05,  // How fast it turns
+            thrustPower: 0.1,     // How fast it accelerates
+            isThrusting: false
+        };
+
+        // --- 3. KEYBOARD CONTROLS ---
+        const keys = {
+            ArrowUp: false,
+            ArrowLeft: false,
+            ArrowRight: false
+        };
+
+        // Listen for key presses
+        window.addEventListener('keydown', (e) => {
+            if (e.key in keys) {
+                keys[e.key] = true;
+            }
+        });
+
+        // Listen for key releases
+        window.addEventListener('keyup', (e) => {
+            if (e.key in keys) {
+                keys[e.key] = false;
+            }
+        });
+
+        // --- 4. THE UPDATE FUNCTION (The "Physics Engine") ---
+        function update() {
+            // A. Handle Rotation
+            if (keys.ArrowLeft) {
+                ship.angle -= ship.rotationSpeed;
+            }
+            if (keys.ArrowRight) {
+                ship.angle += ship.rotationSpeed;
+            }
+
+            // B. Handle Thrust
+            ship.isThrusting = false;
+            if (keys.ArrowUp) {
+                ship.isThrusting = true;
+                // Apply thrust in the direction the ship is facing
+                // Math.cos(angle) gives the X part of the direction
+                // Math.sin(angle) gives the Y part of the direction
+                ship.vx += Math.cos(ship.angle) * ship.thrustPower;
+                ship.vy += Math.sin(ship.angle) * ship.thrustPower;
+            }
+
+            // C. Apply Velocity (Move the ship)
+            ship.x += ship.vx;
+            ship.y += ship.vy;
+
+            // D. Handle Screen Wrapping (like in 'Asteroids')
+            if (ship.x < 0) ship.x = canvas.width;
+            if (ship.x > canvas.width) ship.x = 0;
+            if (ship.y < 0) ship.y = canvas.height;
+            if (ship.y > canvas.height) ship.y = 0;
+        }
+
+        // --- 5. THE DRAW FUNCTION (The "Renderer") ---
+        function draw() {
+            // Clear the entire canvas with a black rectangle
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Save the current canvas state
+            ctx.save();
+
+            // Move the canvas "origin" to the ship's position and angle
+            ctx.translate(ship.x, ship.y);
+            ctx.rotate(ship.angle);
+
+            // Draw the ship's triangle
+            ctx.beginPath();
+            ctx.moveTo(15, 0);       // Nose
+            ctx.lineTo(-10, -8);     // Back-left
+            ctx.lineTo(-10, 8);      // Back-right
+            ctx.closePath();
+            ctx.strokeStyle = 'white'; // Outline color
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            // Draw the thruster flame if thrusting
+            if (ship.isThrusting) {
+                ctx.beginPath();
+                ctx.moveTo(-10, 0);     // Middle of the back
+                ctx.lineTo(-18, -5);    // Flame point 1
+                ctx.lineTo(-18, 5);     // Flame point 2
+                ctx.closePath();
+                ctx.fillStyle = 'orange'; // Flame color
+                ctx.fill();
+            }
+
+            // Restore the canvas state
+            ctx.restore();
+        }
+
+        // --- 6. THE GAME LOOP ---
+        // This function runs every frame, forever
+        function gameLoop() {
+            update(); // 1. Update all game logic
+            draw();   // 2. Draw everything
+            
+            // Ask the browser to run this function again
+            // when it's ready for the next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- 7. START THE GAME ---
+        // Call the game loop for the first time
+        gameLoop();
+
+    </script>
+</body>
+</html>
