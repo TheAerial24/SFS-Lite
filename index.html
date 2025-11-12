@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lite Spaceflight Sim - Phase 4.3 (Typo Fix)</title>
+    <title>Lite Spaceflight Sim - Phase 5 (HUD)</title>
     <style>
         body, html {
             margin: 0;
@@ -31,6 +31,10 @@
     <div id="hud">
         Altitude: 0 m<br>
         Velocity: 0 m/s<br>
+        <br>
+        Apoapsis: 0 m<br>
+        Periapsis: 0 m<br>
+        <br>
         Time Warp: 1x
     </div>
 
@@ -52,9 +56,7 @@
         const SHIP_ROTATION_SPEED = 90.0;
         const SHIP_HEIGHT = 10;
         const SHIP_WIDTH = 5;
-        
         const SAFE_LANDING_SPEED = 20.0;
-        
         const MAX_ZOOM = 1.0;
         const MIN_ZOOM = 0.0000001;
 
@@ -74,6 +76,14 @@
             x: 0,
             y: 0,
             zoom: 0.0002
+        };
+        
+        // --- NEW: Global trajectory object ---
+        // We will store the path and orbital data here
+        let trajectory = {
+            path: [],
+            apoapsis: 0,
+            periapsis: 0
         };
 
         // --- 4. CONTROLS & TIME (Untouched) ---
@@ -102,7 +112,7 @@
             if (e.key in keys) keys[e.key] = false;
         });
 
-        // --- 5. PHYSICS & GAME LOGIC (Untouched) ---
+        // --- 5. PHYSICS & GAME LOGIC ---
 
         function applyGravity(ship, body, dt) {
             // UNTOUCHED
@@ -122,17 +132,23 @@
         }
 
         function getGravityAccel(ghostShip, body) {
-            // UNTOUCHED
             const dx = body.x - ghostShip.x;
             const dy = body.y - ghostShip.y;
             const distSq = dx * dx + dy * dy;
-            const dist = Math.sqrt(distSq);
+
+            // --- FIX FOR TRAJECTORY BUG ---
+            // Prevent NaN/Infinity if distance is (near) zero
+            if (distSq < 1.0) {
+                return { ax: 0, ay: 0 };
+            }
+            // --- END FIX ---
             
+            const dist = Math.sqrt(distSq);
             const accel = body.gm / distSq;
             const ax = (dx / dist) * accel;
             const ay = (dy / dist) * accel;
             
-            return { ax, ay };
+            return { ax, ay, dist }; // Also return dist for orbit calculation
         }
 
         function checkLanding(ship, body, dist, dt) {
@@ -156,11 +172,9 @@
             ship.vy = 0;
             
             const angleToBody = Math.atan2(ship.y - body.y, ship.x - body.x);
-            
             const landRadius = body.radius + (SHIP_HEIGHT / 2);
             ship.x = body.x + Math.cos(angleToBody) * landRadius;
             ship.y = body.y + Math.sin(angleToBody) * landRadius;
-            
             ship.angle = angleToBody + Math.PI / 2;
         }
 
@@ -179,15 +193,59 @@
             timeWarpIndex = 0;
         }
 
-        // --- 6. UPDATE FUNCTION (Untouched) ---
+        // --- NEW TRAJECTORY CALCULATION FUNCTION ---
+        // This runs the simulation and returns all data
+        const PREDICTION_STEPS = 1000;
+        const PREDICTION_STEP_TIME = 2;
+
+        function calculateTrajectory(ship) {
+            let ghost = {
+                x: ship.x,
+                y: ship.y,
+                vx: ship.vx,
+                vy: ship.vy
+            };
+            
+            let pathPoints = [];
+            let maxDist = 0;
+            let minDist = Infinity;
+
+            for (let i = 0; i < PREDICTION_STEPS; i++) {
+                let accelE = getGravityAccel(ghost, earth);
+                let accelM = getGravityAccel(ghost, moon);
+                
+                let ax = accelE.ax + accelM.ax;
+                let ay = accelE.ay + accelM.ay;
+                
+                ghost.vx += ax * PREDICTION_STEP_TIME;
+                ghost.vy += ay * PREDICTION_STEP_TIME;
+                ghost.x += ghost.vx * PREDICTION_STEP_TIME;
+                ghost.y += ghost.vy * PREDICTION_STEP_TIME;
+                
+                pathPoints.push({ x: ghost.x, y: ghost.y });
+                
+                // Update orbital data (relative to Earth for now)
+                maxDist = Math.max(maxDist, accelE.dist);
+                minDist = Math.min(minDist, accelE.dist);
+            }
+            
+            return {
+                path: pathPoints,
+                apoapsis: maxDist - earth.radius,
+                periapsis: minDist - earth.radius
+            };
+        }
+        // -------------------------------------------
+
+        // --- 6. UPDATE FUNCTION (Refactored) ---
         function update(dt) {
-            // UNTOUCHED
+            // UNTOUCHED Zoom
             if (keys['=']) camera.zoom *= 1.02;
             if (keys['-']) camera.zoom /= 1.02;
             camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, camera.zoom));
 
+            // UNTOUCHED Ship Logic
             if (ship.landedOn) {
-                // Landed controls
                 if (keys.ArrowLeft) {
                     ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
                 }
@@ -205,7 +263,7 @@
                     ship.vy += accel_y * dt;
                 }
             } else {
-                // IN-FLIGHT LOGIC
+                // IN-FLIGHT LOGIC (Untouched)
                 if (keys.ArrowLeft) {
                     ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
                 }
@@ -227,48 +285,41 @@
                 checkLanding(ship, earth, distToEarth, dt);
                 checkLanding(ship, moon, distToMoon, dt);
             }
+            
+            // --- NEW: Calculate trajectory and update HUD ---
+            let altitude, velocity, apText, peText;
+
             let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
-            let altitude = (distToEarthCenter - earth.radius).toFixed(0);
-            let velocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy).toFixed(2);
-            hud.innerHTML = `Altitude (Earth): ${altitude} m<br>Velocity: ${velocity} m/s<br>Time Warp: ${timeWarpLevels[timeWarpIndex]}x`;
+            altitude = (distToEarthCenter - earth.radius).toFixed(0);
+            velocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy).toFixed(2);
+
+            if (ship.landedOn) {
+                apText = "Landed";
+                peText = "Landed";
+                trajectory.path = []; // Clear path when landed
+            } else {
+                // This is the big calculation
+                trajectory = calculateTrajectory(ship);
+                apText = `${trajectory.apoapsis.toFixed(0)} m`;
+                peText = `${trajectory.periapsis.toFixed(0)} m`;
+            }
+            
+            hud.innerHTML = `Altitude: ${altitude} m<br>Velocity: ${velocity} m/s<br><br>
+                             Apoapsis: ${apText}<br>Periapsis: ${peText}<br><br>
+                             Time Warp: ${timeWarpLevels[timeWarpIndex]}x`;
         }
         
-        // --- TRAJECTORY FUNCTION (Untouched) ---
+        // --- 7. DRAW FUNCTION (Refactored) ---
         
-        const PREDICTION_STEPS = 1000;
-        const PREDICTION_STEP_TIME = 2;
-        
-        function drawTrajectory(ctx, ship) {
-            // UNTOUCHED
-            if (ship.landedOn) {
+        // This function just DRAWS the path now, no simulation
+        function drawTrajectory(ctx) {
+            if (trajectory.path.length === 0) {
                 return;
-            }
-            let ghost = {
-                x: ship.x,
-                y: ship.y,
-                vx: ship.vx,
-                vy: ship.vy
-            };
-            let pathPoints = [];
-
-            for (let i = 0; i < PREDICTION_STEPS; i++) {
-                let accelE = getGravityAccel(ghost, earth);
-                let accelM = getGravityAccel(ghost, moon);
-                
-                let ax = accelE.ax + accelM.ax;
-                let ay = accelE.ay + accelM.ay;
-                
-                ghost.vx += ax * PREDICTION_STEP_TIME;
-                ghost.vy += ay * PREDICTION_STEP_TIME;
-                ghost.x += ghost.vx * PREDICTION_STEP_TIME;
-                ghost.y += ghost.vy * PREDICTION_STEP_TIME;
-                
-                pathPoints.push({ x: ghost.x, y: ghost.y });
             }
             
             ctx.beginPath();
-            ctx.moveTo(ship.x, ship.y);
-            for (const point of pathPoints) {
+            ctx.moveTo(ship.x, ship.y); // Always start from the ship
+            for (const point of trajectory.path) {
                 ctx.lineTo(point.x, point.y);
             }
             
@@ -276,9 +327,7 @@
             ctx.lineWidth = 1 / camera.zoom;
             ctx.stroke();
         }
-        // ---------------------------------
 
-        // --- 7. DRAW FUNCTION ---
         function draw() {
             // UNTOUCHED
             ctx.fillStyle = '#000';
@@ -290,25 +339,24 @@
             camera.y = ship.y;
             ctx.translate(-camera.x, -camera.y);
             
-            drawTrajectory(ctx, ship);
+            // --- MODIFIED: Call the simpler draw function ---
+            drawTrajectory(ctx);
             
-            // Draw Earth
+            // Draw Earth (Untouched)
             ctx.beginPath();
             ctx.arc(earth.x, earth.y, earth.radius, 0, Math.PI * 2);
             ctx.fillStyle = '#3a86ff'; 
             ctx.fill();
 
-            // Draw Moon
+            // Draw Moon (Untouched)
             ctx.beginPath();
             ctx.arc(moon.x, moon.y, moon.radius, 0, Math.PI * 2);
             ctx.fillStyle = '#8e9aaf';
             ctx.fill();
 
-            // Draw the Ship
+            // Draw the Ship (Untouched)
             ctx.save();
-            // --- THIS IS THE FIX ---
-            ctx.translate(ship.x, ship.y); // Was ship.Y
-            // -----------------------
+            ctx.translate(ship.x, ship.y);
             ctx.rotate(ship.angle); 
             ctx.lineWidth = 1 / camera.zoom; 
             ctx.beginPath();
@@ -333,7 +381,6 @@
 
         // --- 8. GAME LOOP (Untouched) ---
         function gameLoop(timestamp) {
-            // UNTOUCHED
             let dt = (timestamp - lastTime) / 1000;
             lastTime = timestamp;
             
