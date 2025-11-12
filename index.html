@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lite Spaceflight Sim - Phase 6 (Map View)</title>
+    <title>Lite Spaceflight Sim - Phase 7 (Time Rewind)</title>
     <style>
         body, html {
             margin: 0;
@@ -46,15 +46,12 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // --- 2. PHYSICS & SCALING ---
+        // --- 2. PHYSICS & SCALING (Untouched) ---
         const GM_EARTH = 3.986004418e14 / 16.0;
         const GM_MOON = 4.9048695e12 / 16.0;
         const EARTH_RADIUS = 6371000 / 4;
         const MOON_RADIUS = 1737000 / 4;
-        
-        // --- MODIFICATION: Moon is closer ---
-        const MOON_DISTANCE = (384400000 / 4) / 2; // 48,050,000 m
-        
+        const MOON_DISTANCE = (384400000 / 4) / 2; // Moon is closer
         const SHIP_THRUST_ACCEL = 25.0;
         const SHIP_ROTATION_SPEED = 90.0;
         const SHIP_HEIGHT = 10;
@@ -63,7 +60,7 @@
         const MAX_ZOOM = 1.0;
         const MIN_ZOOM = 0.0000001;
 
-        // --- 3. GAME OBJECTS (Untouched) ---
+        // --- 3. GAME OBJECTS ---
         let ship = {}; 
         const earth = {
             x: 0, y: 0,
@@ -87,8 +84,11 @@
             periapsis: 0
         };
         
-        // --- MODIFICATION: Map View Toggle ---
-        let isMapView = false; // Tracks if we are in map view
+        let isMapView = false;
+        
+        // --- MODIFICATION: Rewind Variables ---
+        let historyLog = []; // Stores our past states
+        let lastHistorySave = 0; // Tracks when we last saved
 
         // --- 4. CONTROLS & TIME ---
         const keys = {
@@ -99,7 +99,8 @@
             '-': false,
             '[': false,
             ']': false,
-            'm': false, // --- MODIFICATION: Added 'm' key ---
+            'm': false,
+            'r': false, // --- MODIFICATION: Added 'r' key ---
         };
         const timeWarpLevels = [1, 5, 10, 50, 100, 500, 1000, 10000];
         let timeWarpIndex = 0;
@@ -115,12 +116,33 @@
             }
         });
         
-        // --- MODIFICATION: Added keyup logic for 'm' ---
+        // --- MODIFICATION: Added keyup logic for 'm' and 'r' ---
         window.addEventListener('keyup', (e) => {
             if (e.key in keys) keys[e.key] = false;
 
+            // Map View Toggle
             if (e.key === 'm' || e.key === 'M') {
-                isMapView = !isMapView; // Toggle the map view
+                isMapView = !isMapView; 
+            }
+            
+            // Rewind Logic
+            if (e.key === 'r' || e.key === 'R') {
+                if (historyLog.length > 0) {
+                    console.log("Rewinding 10 seconds!");
+                    // Get the OLDEST state (from 10 seconds ago)
+                    ship = JSON.parse(JSON.stringify(historyLog[0]));
+                    
+                    // Clear the history to prevent weird bugs
+                    historyLog = [];
+                    
+                    // Clear the old trajectory line
+                    trajectory.path = [];
+                    
+                    // Reset time warp to 1x to be safe
+                    timeWarpIndex = 0;
+                } else {
+                    console.log("History log is empty.");
+                }
             }
         });
 
@@ -159,7 +181,6 @@
             
             return { ax, ay, dist };
         }
-        // ---------------------------------
 
         function checkLanding(ship, body, dist, dt) {
             // UNTOUCHED
@@ -188,8 +209,8 @@
             ship.angle = angleToBody + Math.PI / 2;
         }
 
+        // --- MODIFICATION: Clear history on reset ---
         function resetShip() {
-            // UNTOUCHED
             ship = {
                 x: 0,
                 y: -EARTH_RADIUS,
@@ -201,6 +222,7 @@
             };
             landShip(ship, earth); 
             timeWarpIndex = 0;
+            historyLog = []; // Clear history on crash
         }
 
         // --- TRAJECTORY CALCULATION (Untouched) ---
@@ -245,22 +267,18 @@
         }
         // -------------------------------------------
 
-        // --- 6. UPDATE FUNCTION ---
-        // --- MODIFIED with Map View logic ---
+        // --- 6. UPDATE FUNCTION (Untouched from Phase 6) ---
         function update(dt) {
-            // --- MODIFIED ZOOM LOGIC ---
+            // Map View Zoom
             if (!isMapView) {
-                // Ship View Zoom
                 if (keys['=']) camera.zoom *= 1.02;
                 if (keys['-']) camera.zoom /= 1.02;
                 camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, camera.zoom));
             } else {
-                // Map View Zoom (fixed)
-                camera.zoom = 0.000005; // Zoomed out to see new Moon distance
+                camera.zoom = 0.000005;
             }
-            // --- END MODIFICATION ---
 
-            // UNTOUCHED Ship Logic
+            // Ship Logic
             if (ship.landedOn) {
                 if (keys.ArrowLeft) {
                     ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
@@ -279,7 +297,7 @@
                     ship.vy += accel_y * dt;
                 }
             } else {
-                // IN-FLIGHT LOGIC (Untouched)
+                // IN-FLIGHT LOGIC
                 if (keys.ArrowLeft) {
                     ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
                 }
@@ -302,12 +320,12 @@
                 checkLanding(ship, moon, distToMoon, dt);
             }
             
-            // Calculate trajectory and update HUD (Untouched)
+            // Calculate trajectory and update HUD
             let altitude, velocity, apText, peText;
 
             let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
             altitude = (distToEarthCenter - earth.radius).toFixed(0);
-            velocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy).toFixed(2);
+            velocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy).toFixed(2); // This was the line that got cut off
 
             if (ship.landedOn) {
                 apText = "Landed";
@@ -324,10 +342,9 @@
                              Time Warp: ${timeWarpLevels[timeWarpIndex]}x`;
         }
         
-        // --- 7. DRAW FUNCTION ---
+        // --- 7. DRAW FUNCTION (Untouched from Phase 6) ---
         
         function drawTrajectory(ctx) {
-            // UNTOUCHED
             if (trajectory.path.length === 0) {
                 return;
             }
@@ -343,43 +360,37 @@
             ctx.stroke();
         }
 
-        // --- MODIFIED with Map View logic ---
         function draw() {
-            // UNTOUCHED
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.save();
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.scale(camera.zoom, camera.zoom);
 
-            // --- MODIFIED CAMERA LOGIC ---
             if (!isMapView) {
-                // Ship View: Center on ship
                 camera.x = ship.x;
                 camera.y = ship.y;
             } else {
-                // Map View: Center on Earth
                 camera.x = earth.x;
                 camera.y = earth.y;
             }
             ctx.translate(-camera.x, -camera.y);
-            // --- END MODIFICATION ---
             
             drawTrajectory(ctx);
             
-            // Draw Earth (Untouched)
+            // Draw Earth
             ctx.beginPath();
             ctx.arc(earth.x, earth.y, earth.radius, 0, Math.PI * 2);
             ctx.fillStyle = '#3a86ff'; 
             ctx.fill();
 
-            // Draw Moon (Untouched)
+            // Draw Moon
             ctx.beginPath();
             ctx.arc(moon.x, moon.y, moon.radius, 0, Math.PI * 2);
             ctx.fillStyle = '#8e9aaf';
             ctx.fill();
 
-            // Draw the Ship (Untouched)
+            // Draw the Ship
             ctx.save();
             ctx.translate(ship.x, ship.y);
             ctx.rotate(ship.angle); 
@@ -401,11 +412,28 @@
                 ctx.fill();
             }
             ctx.restore(); 
-            ctx.restore(); // This line is correct now
+            ctx.restore();
         }
 
-        // --- 8. GAME LOOP (Untouched) ---
+        // --- 8. GAME LOOP ---
+        // --- MODIFICATION: Added History Saving ---
         function gameLoop(timestamp) {
+            
+            // Save state every 100ms (10 times per second)
+            if (timestamp - lastHistorySave > 100) {
+                lastHistorySave = timestamp;
+                
+                // Add the current ship state to the end of the log
+                // We use JSON to make a deep copy
+                historyLog.push(JSON.parse(JSON.stringify(ship)));
+                
+                // Keep the log at 100 states (100 * 100ms = 10 seconds)
+                if (historyLog.length > 100) {
+                    historyLog.shift(); // Remove the oldest state
+                }
+            }
+            
+            // --- This part is all untouched ---
             let dt = (timestamp - lastTime) / 1000;
             lastTime = timestamp;
             
