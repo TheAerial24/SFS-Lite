@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lite Spaceflight Sim - Phase 7 (Time Rewind)</title>
+    <title>Lite Spaceflight Sim - Phase 8 (Saving)</title>
     <style>
         body, html {
             margin: 0;
@@ -24,10 +24,31 @@
             z-index: 10;
             text-shadow: 1px 1px 2px black;
         }
+        
+        /* --- NEW: Style for Save/Load buttons --- */
+        #saveControls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+        }
+        #saveControls button {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            background-color: #333;
+            color: white;
+            border: 1px solid white;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        #saveControls button:hover {
+            background-color: #555;
+        }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
+    
     <div id="hud">
         Altitude: 0 m<br>
         Velocity: 0 m/s<br>
@@ -37,12 +58,22 @@
         <br>
         Time Warp: 1x
     </div>
+    
+    <div id="saveControls">
+        <button id="saveButton">Save Game</button>
+        <button id="loadButton">Load Game</button>
+    </div>
 
     <script>
-        // --- 1. SETUP (Untouched) ---
+        // --- 1. SETUP ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const hud = document.getElementById('hud');
+        
+        // --- NEW: Get buttons ---
+        const saveButton = document.getElementById('saveButton');
+        const loadButton = document.getElementById('loadButton');
+
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
@@ -51,7 +82,7 @@
         const GM_MOON = 4.9048695e12 / 16.0;
         const EARTH_RADIUS = 6371000 / 4;
         const MOON_RADIUS = 1737000 / 4;
-        const MOON_DISTANCE = (384400000 / 4) / 2; // Moon is closer
+        const MOON_DISTANCE = (384400000 / 4) / 2;
         const SHIP_THRUST_ACCEL = 25.0;
         const SHIP_ROTATION_SPEED = 90.0;
         const SHIP_HEIGHT = 10;
@@ -60,7 +91,7 @@
         const MAX_ZOOM = 1.0;
         const MIN_ZOOM = 0.0000001;
 
-        // --- 3. GAME OBJECTS ---
+        // --- 3. GAME OBJECTS (Untouched) ---
         let ship = {}; 
         const earth = {
             x: 0, y: 0,
@@ -77,20 +108,16 @@
             y: 0,
             zoom: 0.0002
         };
-        
         let trajectory = {
             path: [],
             apoapsis: 0,
             periapsis: 0
         };
-        
         let isMapView = false;
-        
-        // --- MODIFICATION: Rewind Variables ---
-        let historyLog = []; // Stores our past states
-        let lastHistorySave = 0; // Tracks when we last saved
+        let historyLog = [];
+        let lastHistorySave = 0;
 
-        // --- 4. CONTROLS & TIME ---
+        // --- 4. CONTROLS & TIME (Untouched) ---
         const keys = {
             ArrowUp: false,
             ArrowLeft: false,
@@ -100,7 +127,7 @@
             '[': false,
             ']': false,
             'm': false,
-            'r': false, // --- MODIFICATION: Added 'r' key ---
+            'r': false,
         };
         const timeWarpLevels = [1, 5, 10, 50, 100, 500, 1000, 10000];
         let timeWarpIndex = 0;
@@ -116,29 +143,17 @@
             }
         });
         
-        // --- MODIFICATION: Added keyup logic for 'm' and 'r' ---
         window.addEventListener('keyup', (e) => {
             if (e.key in keys) keys[e.key] = false;
-
-            // Map View Toggle
             if (e.key === 'm' || e.key === 'M') {
                 isMapView = !isMapView; 
             }
-            
-            // Rewind Logic
             if (e.key === 'r' || e.key === 'R') {
                 if (historyLog.length > 0) {
                     console.log("Rewinding 10 seconds!");
-                    // Get the OLDEST state (from 10 seconds ago)
                     ship = JSON.parse(JSON.stringify(historyLog[0]));
-                    
-                    // Clear the history to prevent weird bugs
                     historyLog = [];
-                    
-                    // Clear the old trajectory line
                     trajectory.path = [];
-                    
-                    // Reset time warp to 1x to be safe
                     timeWarpIndex = 0;
                 } else {
                     console.log("History log is empty.");
@@ -148,8 +163,45 @@
 
         // --- 5. PHYSICS & GAME LOGIC ---
 
+        // --- NEW: Save/Load Functions ---
+        const SAVE_KEY = "sfs_lite_savegame";
+
+        function saveGame() {
+            if (ship.landedOn) {
+                // We only save if the ship is landed
+                const saveString = JSON.stringify(ship);
+                localStorage.setItem(SAVE_KEY, saveString);
+                alert("Game Saved!");
+            } else {
+                alert("You can only save the game while landed.");
+            }
+        }
+        
+        function loadGame() {
+            const saveString = localStorage.getItem(SAVE_KEY);
+            if (saveString) {
+                // Load the ship data
+                ship = JSON.parse(saveString);
+                
+                // Reset other systems to avoid bugs
+                historyLog = [];
+                trajectory.path = [];
+                timeWarpIndex = 0;
+                isMapView = false; // Go back to ship view
+                
+                alert("Game Loaded!");
+            } else {
+                alert("No save game found!");
+            }
+        }
+        
+        // --- NEW: Hook up buttons ---
+        saveButton.addEventListener('click', saveGame);
+        loadButton.addEventListener('click', loadGame);
+
+        // --- All other functions are UNTOUCHED ---
+
         function applyGravity(ship, body, dt) {
-            // UNTOUCHED
             const dx = body.x - ship.x;
             const dy = body.y - ship.y;
             const distSq = dx * dx + dy * dy;
@@ -165,7 +217,6 @@
             return dist; 
         }
 
-        // PREDICTION FUNCTION (Untouched from 5.3)
         function getGravityAccel(ghostShip, body) {
             const dx = body.x - ghostShip.x;
             const dy = body.y - ghostShip.y;
@@ -183,7 +234,6 @@
         }
 
         function checkLanding(ship, body, dist, dt) {
-            // UNTOUCHED
             if (dist < (body.radius + SHIP_HEIGHT / 2)) {
                 const totalVelocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
                 
@@ -197,7 +247,6 @@
         }
         
         function landShip(ship, body) {
-            // UNTOUCHED
             ship.landedOn = body;
             ship.vx = 0;
             ship.vy = 0;
@@ -209,7 +258,6 @@
             ship.angle = angleToBody + Math.PI / 2;
         }
 
-        // --- MODIFICATION: Clear history on reset ---
         function resetShip() {
             ship = {
                 x: 0,
@@ -222,7 +270,7 @@
             };
             landShip(ship, earth); 
             timeWarpIndex = 0;
-            historyLog = []; // Clear history on crash
+            historyLog = [];
         }
 
         // --- TRAJECTORY CALCULATION (Untouched) ---
@@ -265,11 +313,9 @@
                 periapsis: minDist - earth.radius
             };
         }
-        // -------------------------------------------
 
-        // --- 6. UPDATE FUNCTION (Untouched from Phase 6) ---
+        // --- 6. UPDATE FUNCTION (Untouched from Phase 7) ---
         function update(dt) {
-            // Map View Zoom
             if (!isMapView) {
                 if (keys['=']) camera.zoom *= 1.02;
                 if (keys['-']) camera.zoom /= 1.02;
@@ -278,7 +324,6 @@
                 camera.zoom = 0.000005;
             }
 
-            // Ship Logic
             if (ship.landedOn) {
                 if (keys.ArrowLeft) {
                     ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
@@ -325,7 +370,7 @@
 
             let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
             altitude = (distToEarthCenter - earth.radius).toFixed(0);
-            velocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy).toFixed(2); // This was the line that got cut off
+            velocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy).toFixed(2);
 
             if (ship.landedOn) {
                 apText = "Landed";
@@ -342,7 +387,7 @@
                              Time Warp: ${timeWarpLevels[timeWarpIndex]}x`;
         }
         
-        // --- 7. DRAW FUNCTION (Untouched from Phase 6) ---
+        // --- 7. DRAW FUNCTION (Untouched from Phase 7) ---
         
         function drawTrajectory(ctx) {
             if (trajectory.path.length === 0) {
@@ -372,7 +417,7 @@
                 camera.y = ship.y;
             } else {
                 camera.x = earth.x;
-                camera.y = earth.y;
+                camera.Y = earth.y;
             }
             ctx.translate(-camera.x, -camera.y);
             
@@ -415,25 +460,17 @@
             ctx.restore();
         }
 
-        // --- 8. GAME LOOP ---
-        // --- MODIFICATION: Added History Saving ---
+        // --- 8. GAME LOOP (Untouched from Phase 7) ---
         function gameLoop(timestamp) {
             
-            // Save state every 100ms (10 times per second)
             if (timestamp - lastHistorySave > 100) {
                 lastHistorySave = timestamp;
-                
-                // Add the current ship state to the end of the log
-                // We use JSON to make a deep copy
                 historyLog.push(JSON.parse(JSON.stringify(ship)));
-                
-                // Keep the log at 100 states (100 * 100ms = 10 seconds)
                 if (historyLog.length > 100) {
-                    historyLog.shift(); // Remove the oldest state
+                    historyLog.shift();
                 }
             }
             
-            // --- This part is all untouched ---
             let dt = (timestamp - lastTime) / 1000;
             lastTime = timestamp;
             
