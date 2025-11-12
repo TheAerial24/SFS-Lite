@@ -24,8 +24,10 @@
             z-index: 10;
             text-shadow: 1px 1px 2px black;
         }
+        /* Added margin-bottom to HUD for better separation */
+        #hud br { margin-top: 5px; }
+
         
-        /* --- NEW: Style for Save/Load buttons --- */
         #saveControls {
             position: fixed;
             top: 10px;
@@ -40,9 +42,58 @@
             border: 1px solid white;
             padding: 5px 10px;
             cursor: pointer;
+            border-radius: 4px;
         }
         #saveControls button:hover {
             background-color: #555;
+        }
+
+        /* --- Achievement Popup Style --- */
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+            10% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            90% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+        }
+        #achievementPopup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(46, 204, 113, 0.95); /* Bright Green */
+            color: #1a1a1a;
+            padding: 20px 30px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 20px;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 0 20px rgba(46, 204, 113, 0.5);
+            font-family: 'Consolas', 'Courier New', monospace;
+            animation: fadeInOut 4s ease-in-out forwards;
+        }
+        /* Custom message box for alerts/confirms */
+        #messageBox {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1e1e1e;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+            z-index: 200;
+            display: none;
+            text-align: center;
+        }
+        #messageBox button {
+            margin-top: 10px;
+            background-color: #007bff;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -50,13 +101,7 @@
     <canvas id="gameCanvas"></canvas>
     
     <div id="hud">
-        Altitude: 0 m<br>
-        Velocity: 0 m/s<br>
-        <br>
-        Apoapsis: 0 m<br>
-        Periapsis: 0 m<br>
-        <br>
-        Time Warp: 1x
+        <!-- Content dynamically generated in draw() function -->
     </div>
     
     <div id="saveControls">
@@ -64,20 +109,43 @@
         <button id="loadButton">Load Game</button>
     </div>
 
+    <!-- Achievement Popup -->
+    <div id="achievementPopup" style="display: none;">
+        ACHIEVEMENT UNLOCKED!
+    </div>
+
+    <!-- Custom Message Box (Replaces alert()) -->
+    <div id="messageBox">
+        <p id="messageText"></p>
+        <button id="messageOk">OK</button>
+    </div>
+
     <script>
+        // --- Custom Alert/Message Box Function ---
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+        const messageOk = document.getElementById('messageOk');
+
+        function showMessage(message) {
+            messageText.textContent = message;
+            messageBox.style.display = 'block';
+            messageOk.onclick = () => {
+                messageBox.style.display = 'none';
+            };
+        }
+
         // --- 1. SETUP ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const hud = document.getElementById('hud');
         
-        // --- NEW: Get buttons ---
         const saveButton = document.getElementById('saveButton');
         const loadButton = document.getElementById('loadButton');
-
+        
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // --- 2. PHYSICS & SCALING (Untouched) ---
+        // --- 2. PHYSICS & SCALING ---
         const GM_EARTH = 3.986004418e14 / 16.0;
         const GM_MOON = 4.9048695e12 / 16.0;
         const EARTH_RADIUS = 6371000 / 4;
@@ -90,8 +158,9 @@
         const SAFE_LANDING_SPEED = 20.0;
         const MAX_ZOOM = 1.0;
         const MIN_ZOOM = 0.0000001;
+        const SPACE_ALTITUDE = 100000; // 100 km, for 'Reaching Space' achievement
 
-        // --- 3. GAME OBJECTS (Untouched) ---
+        // --- 3. GAME OBJECTS ---
         let ship = {}; 
         const earth = {
             x: 0, y: 0,
@@ -113,25 +182,27 @@
             apoapsis: 0,
             periapsis: 0
         };
-        let isMapView = false;
+        // Removed isMapView variable
         let historyLog = [];
         let lastHistorySave = 0;
 
-        // --- 4. CONTROLS & TIME (Untouched) ---
+        // --- 4. CONTROLS & TIME ---
         const keys = {
             ArrowUp: false,
             ArrowLeft: false,
             ArrowRight: false,
-            '=': false,
-            '-': false,
-            '[': false,
-            ']': false,
-            'm': false,
-            'r': false,
+            '=': false, // Zoom In
+            '-': false, // Zoom Out
+            '[': false, // Warp Down
+            ']': false, // Warp Up
+            'r': false, // Rewind
         };
         const timeWarpLevels = [1, 5, 10, 50, 100, 500, 1000, 10000];
         let timeWarpIndex = 0;
         let lastTime = 0; 
+        
+        // NEW STATE: Controls visibility
+        let controlsVisible = true;
         
         window.addEventListener('keydown', (e) => {
             if (e.key in keys) keys[e.key] = true;
@@ -145,8 +216,11 @@
         
         window.addEventListener('keyup', (e) => {
             if (e.key in keys) keys[e.key] = false;
-            if (e.key === 'm' || e.key === 'M') {
-                isMapView = !isMapView; 
+            // Removed 'm' key logic for Map View
+            
+            // TOGGLE CONTROLS
+            if (e.key === 'c' || e.key === 'C') {
+                controlsVisible = !controlsVisible;
             }
             if (e.key === 'r' || e.key === 'R') {
                 if (historyLog.length > 0) {
@@ -161,45 +235,125 @@
             }
         });
 
-        // --- 5. PHYSICS & GAME LOGIC ---
-
-        // --- NEW: Save/Load Functions ---
+        // --- Save/Load Functions ---
         const SAVE_KEY = "sfs_lite_savegame";
 
         function saveGame() {
             if (ship.landedOn) {
-                // We only save if the ship is landed
-                const saveString = JSON.stringify(ship);
-                localStorage.setItem(SAVE_KEY, saveString);
-                alert("Game Saved!");
+                // Ensure we only save essential ship properties, not functions
+                const saveState = {
+                    x: ship.x, y: ship.y, vx: ship.vx, vy: ship.vy, 
+                    angle: ship.angle, isThrusting: ship.isThrusting,
+                    landedOn: ship.landedOn === earth ? 'earth' : (ship.landedOn === moon ? 'moon' : null),
+                    hasLeftEarth: ship.hasLeftEarth,
+                    hasLandedOnMoon: ship.hasLandedOnMoon
+                };
+                localStorage.setItem(SAVE_KEY, JSON.stringify(saveState));
+                showMessage("Game Saved! (Only saves when landed)");
             } else {
-                alert("You can only save the game while landed.");
+                showMessage("You can only save the game while landed.");
             }
         }
         
         function loadGame() {
             const saveString = localStorage.getItem(SAVE_KEY);
             if (saveString) {
-                // Load the ship data
-                ship = JSON.parse(saveString);
+                const loadedShip = JSON.parse(saveString);
                 
+                // Reconstruct ship object with loaded data
+                ship.x = loadedShip.x;
+                ship.y = loadedShip.y;
+                ship.vx = loadedShip.vx;
+                ship.vy = loadedShip.vy;
+                ship.angle = loadedShip.angle;
+                ship.isThrusting = loadedShip.isThrusting;
+                ship.landedOn = loadedShip.landedOn === 'earth' ? earth : (loadedShip.landedOn === 'moon' ? moon : null);
+                ship.hasLeftEarth = loadedShip.hasLeftEarth || false;
+                ship.hasLandedOnMoon = loadedShip.hasLandedOnMoon || false;
+
                 // Reset other systems to avoid bugs
                 historyLog = [];
                 trajectory.path = [];
                 timeWarpIndex = 0;
-                isMapView = false; // Go back to ship view
+                // Removed isMapView reset
                 
-                alert("Game Loaded!");
+                showMessage("Game Loaded!");
             } else {
-                alert("No save game found!");
+                showMessage("No save game found!");
             }
         }
         
-        // --- NEW: Hook up buttons ---
+        // --- Hook up buttons ---
         saveButton.addEventListener('click', saveGame);
         loadButton.addEventListener('click', loadGame);
 
-        // --- All other functions are UNTOUCHED ---
+        // --- Achievement System ---
+        const ACHIEVEMENTS = {
+            FIRST_FLIGHT: { id: 'FIRST_FLIGHT', name: 'We Have Lift-Off!', desc: 'Successfully leave the ground for the first time.', unlocked: false },
+            CRASH_LANDING: { id: 'CRASH_LANDING', name: 'Unscheduled Disassembly', desc: 'Experience a high-speed crash landing.', unlocked: false },
+            MOON_RETURN: { id: 'MOON_RETURN', name: 'The Tourists', desc: 'Land on the Moon and safely return to Earth.', unlocked: false },
+            FIRST_ORBIT: { id: 'FIRST_ORBIT', name: 'Reaching Space', desc: 'Achieve an altitude greater than 100 km (100,000 m).', unlocked: false },
+            KERBIN_LANDING: { id: 'KERBIN_LANDING', name: 'Home Base', desc: 'Successfully land on Earth.', unlocked: false },
+            MOON_LANDING: { id: 'MOON_LANDING', name: 'Giant Leap', desc: 'Successfully land on the Moon.', unlocked: false }
+        };
+        const ACHIEVEMENT_KEY = "sfs_lite_achievements";
+        const achievementPopup = document.getElementById('achievementPopup');
+
+        function loadAchievements() {
+            const saved = localStorage.getItem(ACHIEVEMENT_KEY);
+            if (saved) {
+                try {
+                    const savedAchievements = JSON.parse(saved);
+                    for (const key in savedAchievements) {
+                        if (ACHIEVEMENTS[key]) {
+                            ACHIEVEMENTS[key].unlocked = savedAchievements[key].unlocked;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error loading achievements:", e);
+                }
+            }
+        }
+
+        function saveAchievements() {
+            // Only save the unlocked status
+            const currentAchievements = {};
+            for (const key in ACHIEVEMENTS) {
+                currentAchievements[key] = { unlocked: ACHIEVEMENTS[key].unlocked };
+            }
+            localStorage.setItem(ACHIEVEMENT_KEY, JSON.stringify(currentAchievements));
+        }
+
+        function unlockAchievement(achievementId) {
+            if (ACHIEVEMENTS[achievementId] && !ACHIEVEMENTS[achievementId].unlocked) {
+                ACHIEVEMENTS[achievementId].unlocked = true;
+                saveAchievements();
+                
+                // Display popup
+                const achievement = ACHIEVEMENTS[achievementId];
+                achievementPopup.textContent = `ACHIEVEMENT UNLOCKED: ${achievement.name} - ${achievement.desc}`;
+                achievementPopup.style.display = 'block';
+                
+                setTimeout(() => {
+                    achievementPopup.style.display = 'none';
+                }, 4000);
+            }
+        }
+
+        function checkAchievements() {
+            // 1. Orbit / Altitude Achievements
+            const distFromEarth = Math.sqrt(ship.x * ship.x + ship.y * ship.y);
+            const altitude = distFromEarth - earth.radius;
+
+            // 'Reaching Space' (FIRST_ORBIT)
+            if (!ship.landedOn && altitude > SPACE_ALTITUDE) {
+                unlockAchievement(ACHIEVEMENTS.FIRST_ORBIT.id);
+            }
+            
+            // 2. Landing Achievements are handled primarily in landShip
+        }
+
+        // --- Physics functions ---
 
         function applyGravity(ship, body, dt) {
             const dx = body.x - ship.x;
@@ -239,6 +393,11 @@
                 
                 if (totalVelocity > SAFE_LANDING_SPEED) {
                     console.log("CRASH! Speed: " + totalVelocity);
+                    showMessage(`CRASH! Impact speed: ${totalVelocity.toFixed(2)} m/s (Max safe speed: ${SAFE_LANDING_SPEED} m/s)`);
+                    
+                    // --- CRASH LANDING ACHIEVEMENT ---
+                    unlockAchievement(ACHIEVEMENTS.CRASH_LANDING.id);
+                    
                     resetShip();
                 } else {
                     landShip(ship, body);
@@ -256,6 +415,26 @@
             ship.x = body.x + Math.cos(angleToBody) * landRadius;
             ship.y = body.y + Math.sin(angleToBody) * landRadius;
             ship.angle = angleToBody + Math.PI / 2;
+
+            // Track state for Moon Return
+            if (body === moon) {
+                // Unlock Giant Leap
+                unlockAchievement(ACHIEVEMENTS.MOON_LANDING.id);
+                ship.hasLandedOnMoon = true;
+            } 
+            
+            // Check Moon Return achievement upon soft landing on Earth
+            if (body === earth) {
+                // Unlock Home Base
+                unlockAchievement(ACHIEVEMENTS.KERBIN_LANDING.id);
+                
+                // Unlock The Tourists (Moon Return) if previous Moon landing was achieved
+                if (ship.hasLandedOnMoon) {
+                    unlockAchievement(ACHIEVEMENTS.MOON_RETURN.id);
+                }
+            }
+            
+            checkAchievements();
         }
 
         function resetShip() {
@@ -266,234 +445,275 @@
                 vy: 0,
                 angle: 0, 
                 isThrusting: false,
-                landedOn: null
+                landedOn: null,
+                // NEW STATE VARIABLES for tracking achievements
+                hasLeftEarth: false, 
+                hasLandedOnMoon: false 
             };
             landShip(ship, earth); 
             timeWarpIndex = 0;
             historyLog = [];
         }
 
-        // --- TRAJECTORY CALCULATION (Untouched) ---
+        // --- TRAJECTORY CALCULATION ---
         const PREDICTION_STEPS = 1000;
         const PREDICTION_STEP_TIME = 2;
 
         function calculateTrajectory(ship) {
-            let ghost = {
-                x: ship.x,
-                y: ship.y,
-                vx: ship.vx,
-                vy: ship.vy
-            };
-            
-            let pathPoints = [];
+            const path = [];
             let maxDist = 0;
             let minDist = Infinity;
+            let isLooped = false;
 
+            const ghostShip = JSON.parse(JSON.stringify(ship));
+            ghostShip.isThrusting = false;
+            
             for (let i = 0; i < PREDICTION_STEPS; i++) {
-                let accelE = getGravityAccel(ghost, earth);
-                let accelM = getGravityAccel(ghost, moon);
+                const distEarth = applyGravity(ghostShip, earth, PREDICTION_STEP_TIME);
+                const distMoon = applyGravity(ghostShip, moon, PREDICTION_STEP_TIME);
+
+                if (distEarth < earth.radius + SHIP_HEIGHT / 2 || distMoon < moon.radius + SHIP_HEIGHT / 2) {
+                    break; 
+                }
+
+                const distToOrigin = Math.sqrt(ghostShip.x * ghostShip.x + ghostShip.y * ghostShip.y);
                 
-                let ax = accelE.ax + accelM.ax;
-                let ay = accelE.ay + accelM.ay;
+                maxDist = Math.max(maxDist, distToOrigin);
+                minDist = Math.min(minDist, distToOrigin);
                 
-                ghost.vx += ax * PREDICTION_STEP_TIME;
-                ghost.vy += ay * PREDICTION_STEP_TIME;
-                ghost.x += ghost.vx * PREDICTION_STEP_TIME;
-                ghost.y += ghost.vy * PREDICTION_STEP_TIME;
-                
-                pathPoints.push({ x: ghost.x, y: ghost.y });
-                
-                maxDist = Math.max(maxDist, accelE.dist);
-                minDist = Math.min(minDist, accelE.dist);
+                path.push({ x: ghostShip.x, y: ghostShip.y });
+
+                // Check for orbit completion (simple way: checking if we cross the x-axis)
+                if (i > 100 && path[i].y * path[i-1].y < 0 && distToOrigin > earth.radius + 1000) {
+                    isLooped = true;
+                }
             }
             
-            return {
-                path: pathPoints,
-                apoapsis: maxDist - earth.radius,
-                periapsis: minDist - earth.radius
-            };
+            trajectory.path = path;
+            trajectory.apoapsis = Math.max(0, maxDist - earth.radius);
+            trajectory.periapsis = Math.max(0, minDist - earth.radius);
+            trajectory.isLooped = isLooped;
         }
 
-        // --- 6. UPDATE FUNCTION (Untouched from Phase 7) ---
+        // --- UPDATE & DRAW FUNCTIONS ---
+
         function update(dt) {
-            if (!isMapView) {
-                if (keys['=']) camera.zoom *= 1.02;
-                if (keys['-']) camera.zoom /= 1.02;
-                camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, camera.zoom));
-            } else {
-                camera.zoom = 0.000005;
-            }
+            const timeScale = timeWarpLevels[timeWarpIndex];
+            const scaledDt = dt * timeScale;
 
-            if (ship.landedOn) {
-                if (keys.ArrowLeft) {
-                    ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
-                }
-                if (keys.ArrowRight) {
-                    ship.angle += (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
+            if (!ship.landedOn) {
+                // Check 'First Flight' achievement
+                if (!ship.hasLeftEarth) {
+                    const distFromEarth = Math.sqrt(ship.x * ship.x + ship.y * ship.y);
+                    if (distFromEarth > earth.radius + SHIP_HEIGHT) {
+                        ship.hasLeftEarth = true;
+                        unlockAchievement(ACHIEVEMENTS.FIRST_FLIGHT.id);
+                    }
                 }
                 
-                ship.isThrusting = false;
+                // --- PHYSICS UPDATE ---
+                
+                // 1. Thrust
                 if (keys.ArrowUp) {
-                    ship.landedOn = null; 
                     ship.isThrusting = true;
-                    const accel_x = Math.cos(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
-                    const accel_y = Math.sin(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
-                    ship.vx += accel_x * dt;
-                    ship.vy += accel_y * dt;
+                    const thrust_ax = Math.sin(ship.angle) * SHIP_THRUST_ACCEL;
+                    const thrust_ay = -Math.cos(ship.angle) * SHIP_THRUST_ACCEL;
+                    ship.vx += thrust_ax * scaledDt;
+                    ship.vy += thrust_ay * scaledDt;
+                } else {
+                    ship.isThrusting = false;
                 }
-            } else {
-                // IN-FLIGHT LOGIC
+                
+                // 2. Rotation
                 if (keys.ArrowLeft) {
-                    ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
+                    ship.angle -= SHIP_ROTATION_SPEED * scaledDt * (Math.PI / 180);
                 }
                 if (keys.ArrowRight) {
-                    ship.angle += (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
+                    ship.angle += SHIP_ROTATION_SPEED * scaledDt * (Math.PI / 180);
                 }
+                
+                // 3. Gravity and Position
+                const distEarth = applyGravity(ship, earth, scaledDt);
+                const distMoon = applyGravity(ship, moon, scaledDt);
+                
+                ship.x += ship.vx * scaledDt;
+                ship.y += ship.vy * scaledDt;
+                
+                // 4. Check Landing / Crash
+                checkLanding(ship, earth, distEarth, scaledDt);
+                checkLanding(ship, moon, distMoon, scaledDt);
+
+                // 5. Trajectory logging for rewind (save every 0.5s of real time)
+                lastHistorySave += dt;
+                if (lastHistorySave >= 0.5) {
+                    historyLog.unshift(JSON.parse(JSON.stringify(ship)));
+                    if (historyLog.length > 20) { // Keep last 10 seconds (20 * 0.5s)
+                        historyLog.pop();
+                    }
+                    lastHistorySave = 0;
+                }
+
+                // 6. Recalculate Trajectory (less often, e.g., every 10 frames)
+                if (Math.floor(lastTime / 10) % 10 === 0) {
+                    calculateTrajectory(ship);
+                }
+            } else {
+                // If landed, ensure camera is locked and trajectory is empty
                 ship.isThrusting = false;
-                if (keys.ArrowUp) {
-                    ship.isThrusting = true;
-                    const accel_x = Math.cos(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
-                    const accel_y = Math.sin(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
-                    ship.vx += accel_x * dt;
-                    ship.vy += accel_y * dt;
-                }
-                let distToEarth = applyGravity(ship, earth, dt);
-                let distToMoon = applyGravity(ship, moon, dt);
-                ship.x += ship.vx * dt;
-                ship.y += ship.vy * dt;
-                checkLanding(ship, earth, distToEarth, dt);
-                checkLanding(ship, moon, distToMoon, dt);
+                trajectory.path = [];
+                trajectory.apoapsis = 0;
+                trajectory.periapsis = 0;
             }
-            
-            // Calculate trajectory and update HUD
-            let altitude, velocity, apText, peText;
 
-            let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
-            altitude = (distToEarthCenter - earth.radius).toFixed(0);
-            velocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy).toFixed(2);
-
-            if (ship.landedOn) {
-                apText = "Landed";
-                peText = "Landed";
-                trajectory.path = []; 
-            } else {
-                trajectory = calculateTrajectory(ship);
-                apText = `${trajectory.apoapsis.toFixed(0)} m`;
-                peText = `${trajectory.periapsis.toFixed(0)} m`;
-            }
-            
-            hud.innerHTML = `Altitude: ${altitude} m<br>Velocity: ${velocity} m/s<br><br>
-                             Apoapsis: ${apText}<br>Periapsis: ${peText}<br><br>
-                             Time Warp: ${timeWarpLevels[timeWarpIndex]}x`;
-        }
-        
-        // --- 7. DRAW FUNCTION (Untouched from Phase 7) ---
-        
-        function drawTrajectory(ctx) {
-            if (trajectory.path.length === 0) {
-                return;
-            }
-            
-            ctx.beginPath();
-            ctx.moveTo(ship.x, ship.y); 
-            for (const point of trajectory.path) {
-                ctx.lineTo(point.x, point.y);
-            }
-            
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.lineWidth = 1 / camera.zoom;
-            ctx.stroke();
+            // Check altitude achievement every frame
+            checkAchievements();
         }
 
-        function draw() {
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.save();
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.scale(camera.zoom, camera.zoom);
-
-            if (!isMapView) {
-                camera.x = ship.x;
-                camera.y = ship.y;
-            } else {
-                camera.x = earth.x;
-                camera.Y = earth.y;
-            }
-            ctx.translate(-camera.x, -camera.y);
-            
-            drawTrajectory(ctx);
-            
-            // Draw Earth
+        function drawBody(body, color) {
             ctx.beginPath();
-            ctx.arc(earth.x, earth.y, earth.radius, 0, Math.PI * 2);
-            ctx.fillStyle = '#3a86ff'; 
+            ctx.arc(
+                (body.x - camera.x) * camera.zoom + canvas.width / 2,
+                (body.y - camera.y) * camera.zoom + canvas.height / 2,
+                body.radius * camera.zoom, 0, Math.PI * 2
+            );
+            ctx.fillStyle = color;
             ctx.fill();
+        }
 
-            // Draw Moon
-            ctx.beginPath();
-            ctx.arc(moon.x, moon.y, moon.radius, 0, Math.PI * 2);
-            ctx.fillStyle = '#8e9aaf';
-            ctx.fill();
+        function drawShip() {
+            const screenX = (ship.x - camera.x) * camera.zoom + canvas.width / 2;
+            const screenY = (ship.y - camera.y) * camera.zoom + canvas.height / 2;
 
-            // Draw the Ship
             ctx.save();
-            ctx.translate(ship.x, ship.y);
-            ctx.rotate(ship.angle); 
-            ctx.lineWidth = 1 / camera.zoom; 
-            ctx.beginPath();
-            ctx.moveTo(0, -SHIP_HEIGHT / 2);
-            ctx.lineTo(SHIP_WIDTH / 2, SHIP_HEIGHT / 2);
-            ctx.lineTo(-SHIP_WIDTH / 2, SHIP_HEIGHT / 2);
-            ctx.closePath();
-            ctx.strokeStyle = 'white';
-            ctx.stroke();
-            if (ship.isThrusting) {
-                ctx.beginPath();
-                ctx.moveTo(0, SHIP_HEIGHT / 2);
-                ctx.lineTo(-SHIP_WIDTH / 2, SHIP_HEIGHT / 2 + 7);
-                ctx.lineTo(SHIP_WIDTH / 2, SHIP_HEIGHT / 2 + 7);
-                ctx.closePath();
+            ctx.translate(screenX, screenY);
+            ctx.rotate(ship.angle);
+            
+            // Draw Body (white)
+            ctx.fillStyle = 'white';
+            ctx.fillRect(-SHIP_WIDTH * camera.zoom / 2, -SHIP_HEIGHT * camera.zoom / 2, SHIP_WIDTH * camera.zoom, SHIP_HEIGHT * camera.zoom);
+            
+            // Draw Engine (red)
+            if (keys.ArrowUp) {
                 ctx.fillStyle = 'orange';
+                ctx.beginPath();
+                ctx.moveTo(0, SHIP_HEIGHT * camera.zoom / 2);
+                ctx.lineTo(-SHIP_WIDTH * camera.zoom, SHIP_HEIGHT * camera.zoom / 2 + 10 * camera.zoom);
+                ctx.lineTo(SHIP_WIDTH * camera.zoom, SHIP_HEIGHT * camera.zoom / 2 + 10 * camera.zoom);
+                ctx.fill();
+                
+                ctx.fillStyle = 'red';
+                ctx.beginPath();
+                ctx.moveTo(0, SHIP_HEIGHT * camera.zoom / 2);
+                ctx.lineTo(-SHIP_WIDTH * camera.zoom / 2, SHIP_HEIGHT * camera.zoom / 2 + 5 * camera.zoom);
+                ctx.lineTo(SHIP_WIDTH * camera.zoom / 2, SHIP_HEIGHT * camera.zoom / 2 + 5 * camera.zoom);
                 ctx.fill();
             }
-            ctx.restore(); 
+
+            // Draw Thrust Indicator
+            if (keys.ArrowUp) {
+                ctx.fillStyle = 'red';
+                ctx.beginPath();
+                ctx.arc(0, SHIP_HEIGHT * camera.zoom / 2 + 20 * camera.zoom, 5 * camera.zoom, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
             ctx.restore();
         }
+        
+        function drawTrajectory() {
+            // Removed isMapView check - always draw trajectory if there is one
+            if (trajectory.path.length === 0) return;
 
-        // --- 8. GAME LOOP (Untouched from Phase 7) ---
-        function gameLoop(timestamp) {
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1;
             
-            if (timestamp - lastHistorySave > 100) {
-                lastHistorySave = timestamp;
-                historyLog.push(JSON.parse(JSON.stringify(ship)));
-                if (historyLog.length > 100) {
-                    historyLog.shift();
+            let first = true;
+            for (const point of trajectory.path) {
+                const screenX = (point.x - camera.x) * camera.zoom + canvas.width / 2;
+                const screenY = (point.y - camera.y) * camera.zoom + canvas.height / 2;
+                
+                if (first) {
+                    ctx.moveTo(screenX, screenY);
+                    first = false;
+                } else {
+                    ctx.lineTo(screenX, screenY);
                 }
             }
+            ctx.stroke();
+        }
+        
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Update Camera (Always lock on Ship position, allow global zoom control)
+            camera.x = ship.x;
+            camera.y = ship.y;
+            camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, camera.zoom * (keys['='] ? 1.02 : (keys['-'] ? 0.98 : 1))));
+
+            // Draw objects
+            drawTrajectory();
+            // Earth is now a deep ocean blue (#1e90ff)
+            drawBody(earth, '#1e90ff'); // Earth (Deep Ocean Blue)
+            drawBody(moon, '#AAAAAA');  // Moon (Gray)
+            drawShip();
             
-            let dt = (timestamp - lastTime) / 1000;
-            lastTime = timestamp;
-            
-            if (dt > 0.1) dt = 0.1; 
-            
-            let warpedDt = dt * timeWarpLevels[timeWarpIndex];
-            
-            let steps = Math.min(100, Math.max(1, warpedDt / 0.016)); 
-            let stepDt = warpedDt / steps;
-            
-            for (let i = 0; i < steps; i++) {
-                update(stepDt);
+            // Draw HUD
+            const distFromEarth = Math.sqrt(ship.x * ship.x + ship.y * ship.y);
+            const altitude = Math.max(0, distFromEarth - earth.radius);
+            const totalVelocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+
+            // --- HUD Content Generation (with Achievements) ---
+            let achievementListHtml = '---<br>ACHIEVEMENTS:<br>';
+            for (const key in ACHIEVEMENTS) {
+                const achievement = ACHIEVEMENTS[key];
+                const status = achievement.unlocked ? ' [✓]' : ' [ ]';
+                // Apply color based on status for easy viewing
+                achievementListHtml += `<span style="color: ${achievement.unlocked ? '#2ecc71' : '#7f8c8d'};">${achievement.name}</span>${status}<br>`;
             }
             
+            // Conditional Controls Line (Updated controls list)
+            let controlsHtml = controlsVisible 
+                ? `Controls: Up/Left/Right, = / - (Zoom), [ / ] (Warp), R (Rewind), C (Toggle Controls)` 
+                : `<span style="color: #f1c40f;">Press C to show controls...</span>`;
+            
+            // --------------------------------------------------
+
+            hud.innerHTML = `
+                Altitude: ${altitude.toFixed(2)} m<br>
+                Velocity: ${totalVelocity.toFixed(2)} m/s<br>
+                <br>
+                Apoapsis: ${trajectory.apoapsis.toFixed(0)} m<br>
+                Periapsis: ${trajectory.periapsis.toFixed(0)} m<br>
+                <br>
+                Time Warp: ${timeWarpLevels[timeWarpIndex]}x<br>
+                ${controlsHtml}<br>
+                ${achievementListHtml}
+            `;
+        }
+        
+        function gameLoop(currentTime) {
+            const dt = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            
+            update(dt);
             draw();
+
             requestAnimationFrame(gameLoop);
         }
 
-        // --- START THE GAME (Untouched) ---
-        resetShip(); 
-        lastTime = performance.now(); 
-        requestAnimationFrame(gameLoop); 
+        // --- Initialization ---
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
 
+        resetShip();
+        loadAchievements(); // Load saved achievement status
+        lastTime = performance.now();
+        requestAnimationFrame(gameLoop);
     </script>
 </body>
 </html>
