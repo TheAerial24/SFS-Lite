@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lite Spaceflight Sim - Phase 4.1 (Fix)</title>
+    <title>Lite Spaceflight Sim - Phase 4.2 (Fixes)</title>
     <style>
         body, html {
             margin: 0;
@@ -42,7 +42,7 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // --- 2. PHYSICS & SCALING (Untouched) ---
+        // --- 2. PHYSICS & SCALING ---
         const GM_EARTH = 3.986004418e14 / 16.0;
         const GM_MOON = 4.9048695e12 / 16.0;
         const EARTH_RADIUS = 6371000 / 4;
@@ -52,7 +52,10 @@
         const SHIP_ROTATION_SPEED = 90.0;
         const SHIP_HEIGHT = 10;
         const SHIP_WIDTH = 5;
-        const SAFE_LANDING_SPEED = 5.0;
+        
+        // --- YOUR CHANGE ---
+        const SAFE_LANDING_SPEED = 20.0; // Was 5.0
+        
         const MAX_ZOOM = 1.0;
         const MIN_ZOOM = 0.0000001;
 
@@ -80,7 +83,7 @@
             ArrowLeft: false,
             ArrowRight: false,
             '=': false,
-            '-': false,
+            '-: false,
             '[': false,
             ']': false,
         };
@@ -119,16 +122,12 @@
             return dist; 
         }
 
-        // --- THIS IS THE TRAJECTORY-ONLY FUNCTION ---
         function getGravityAccel(ghostShip, body) {
+            // UNTOUCHED
             const dx = body.x - ghostShip.x;
             const dy = body.y - ghostShip.y;
             const distSq = dx * dx + dy * dy;
             const dist = Math.sqrt(distSq);
-            
-            // --- FIX: REMOVED the crash check ---
-            // if (dist < body.radius) { return null; } 
-            // Now it will draw "through" the planet
             
             const accel = body.gm / distSq;
             const ax = (dx / dist) * accel;
@@ -136,7 +135,6 @@
             
             return { ax, ay };
         }
-        // ----------------------------------------
 
         function checkLanding(ship, body, dist, dt) {
             // UNTOUCHED
@@ -238,9 +236,9 @@
         
         // --- TRAJECTORY FUNCTION ---
         
-        // --- FIX: Reduced steps to fix lag ---
-        const PREDICTION_STEPS = 100; // Was 500
-        const PREDICTION_STEP_TIME = 5; 
+        // --- YOUR CHANGES ---
+        const PREDICTION_STEPS = 1000; // Was 100 (Makes line longer)
+        const PREDICTION_STEP_TIME = 2; // Was 5 (Makes line smoother)
         
         function drawTrajectory(ctx, ship) {
             // UNTOUCHED
@@ -259,7 +257,6 @@
                 let accelE = getGravityAccel(ghost, earth);
                 let accelM = getGravityAccel(ghost, moon);
                 
-                // --- FIX: This check is now safe, as accel is never null ---
                 let ax = accelE.ax + accelM.ax;
                 let ay = accelE.ay + accelM.ay;
                 
@@ -273,7 +270,7 @@
             
             ctx.beginPath();
             ctx.moveTo(ship.x, ship.y);
-E           for (const point of pathPoints) {
+            for (const point of pathPoints) {
                 ctx.lineTo(point.x, point.y);
             }
             
@@ -295,7 +292,6 @@ E           for (const point of pathPoints) {
             camera.y = ship.y;
             ctx.translate(-camera.x, -camera.y);
             
-            // Call to trajectory function (this is where it's drawn)
             drawTrajectory(ctx, ship);
             
             // Draw Earth
@@ -312,7 +308,7 @@ E           for (const point of pathPoints) {
 
             // Draw the Ship
             ctx.save();
-            ctx.translate(ship.x, ship.y);
+            ctx.translate(ship.x, ship.Y);
             ctx.rotate(ship.angle); 
             ctx.lineWidth = 1 / camera.zoom; 
             ctx.beginPath();
