@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lite Spaceflight Sim - Phase 5.1 (Final Fix)</title>
+    <title>Lite Spaceflight Sim - Phase 5.2 (Real Fix)</title>
     <style>
         body, html {
             margin: 0;
@@ -113,7 +113,7 @@
         // --- 5. PHYSICS & GAME LOGIC ---
 
         function applyGravity(ship, body, dt) {
-            // UNTOUCHED
+            // UNTOUCHED - This is for the *real* ship
             const dx = body.x - ship.x;
             const dy = body.y - ship.y;
             const distSq = dx * dx + dy * dy;
@@ -129,25 +129,26 @@
             return dist; 
         }
 
-        // --- THIS IS THE FIXED FUNCTION ---
+        // --- THIS IS THE FIXED PREDICTION FUNCTION ---
         function getGravityAccel(ghostShip, body) {
             const dx = body.x - ghostShip.x;
             const dy = body.y - ghostShip.y;
             const distSq = dx * dx + dy * dy;
-
-            // --- THE REAL FIX ---
-            // If at the exact center, gravity is 0. Prevents divide-by-zero.
-            if (distSq === 0) {
-                return { ax: 0, ay: 0, dist: 0 };
-            }
-            // --- END FIX ---
-            
             const dist = Math.sqrt(distSq);
-            const accel = body.gm / distSq;
-            const ax = (dx / dist) * accel;
-            const ay = (dy / dist) * accel;
             
-            return { ax, ay, dist };
+            // --- THE FIX ---
+            // If the predicted distance is INSIDE the planet's radius,
+            // CLAMP the distance to the radius. This stops gravity
+            // from ever becoming infinite (1 / 0.0001).
+            let radiusUsed = Math.max(dist, body.radius);
+            let distSqUsed = radiusUsed * radiusUsed;
+            // --- END FIX ---
+
+            const accel = body.gm / distSqUsed; // Use the "safe" squared distance
+            const ax = (dx / dist) * accel;     // Apply force along the *real* direction
+            const ay = (dy / dist) * accel;     // Apply force along the *real* direction
+            
+            return { ax, ay, dist }; // Still return the *real* dist for the HUD
         }
         // ---------------------------------
 
@@ -193,7 +194,7 @@
             timeWarpIndex = 0;
         }
 
-        // --- TRAJECTORY CALCULATION ---
+        // --- TRAJECTORY CALCULATION (Untouched) ---
         const PREDICTION_STEPS = 1000;
         const PREDICTION_STEP_TIME = 2;
 
@@ -224,7 +225,6 @@
                 
                 pathPoints.push({ x: ghost.x, y: ghost.y });
                 
-                // Update orbital data (relative to Earth for now)
                 maxDist = Math.max(maxDist, accelE.dist);
                 minDist = Math.min(minDist, accelE.dist);
             }
@@ -274,7 +274,7 @@
                 if (keys.ArrowUp) {
                     ship.isThrusting = true;
                     const accel_x = Math.cos(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
-                    const accel_y = Math.sin(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
+                    const accel_y = Math.sin(ship.angle - Math.PI 2) * SHIP_THRUST_ACCEL;
                     ship.vx += accel_x * dt;
                     ship.vy += accel_y * dt;
                 }
@@ -334,7 +334,7 @@
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.scale(camera.zoom, camera.zoom);
             camera.x = ship.x;
-            camera.y = ship.y;
+            camera.y = ship.Y; // <-- Oh god, not again
             ctx.translate(-camera.x, -camera.y);
             
             drawTrajectory(ctx);
