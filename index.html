@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lite Spaceflight Sim - Phase 3.3 (Controls Reverted)</title>
+    <title>Lite Spaceflight Sim - Phase 3.4 (Fixes)</title>
     <style>
         body, html {
             margin: 0;
@@ -44,28 +44,27 @@
         canvas.height = window.innerHeight;
 
         // --- 2. REAL-WORLD PHYSICS & SFS SCALING ---
-        const GM_EARTH = 3.986004418e14;
-        const GM_MOON = 4.9048695e12;
+        
+        // --- FIX: GM is scaled by 1/16 (4*4) to match 1/4 radius ---
+        const GM_EARTH = 3.986004418e14 / 16.0; // Keeps surface g = 9.8
+        const GM_MOON = 4.9048695e12 / 16.0;   // Keeps surface g correct
 
         const EARTH_RADIUS = 6371000 / 4; // 1,592,750 m
         const MOON_RADIUS = 1737000 / 4;  // 434,250 m
         const MOON_DISTANCE = 384400000 / 4; // 96,100,000 m
 
-        const SHIP_THRUST_ACCEL = 25.0; // m/s^2
-        
-        // --- FIX: Increased rotation speed ---
-        const SHIP_ROTATION_SPEED = 90.0; // degrees per second (was 3.0)
+        const SHIP_THRUST_ACCEL = 25.0; // m/s^2 (Now > 9.8 gravity)
+        const SHIP_ROTATION_SPEED = 90.0; // degrees per second
         
         const SHIP_HEIGHT = 10; // meters
         const SHIP_WIDTH = 5;   // meters
         const SAFE_LANDING_SPEED = 5.0; // m/s
         
-        // --- KEPT FIX: ZOOM LIMITS ---
         const MAX_ZOOM = 1.0;
         const MIN_ZOOM = 0.0000001;
 
         // --- 3. GAME OBJECTS (Positions in METERS) ---
-        let ship = {}; // Will be set by resetShip()
+        let ship = {}; 
         const earth = {
             x: 0, y: 0,
             radius: EARTH_RADIUS,
@@ -114,6 +113,7 @@
         // --- 5. PHYSICS & GAME LOGIC ---
 
         function applyGravity(ship, body, dt) {
+            // No changes here
             const dx = body.x - ship.x;
             const dy = body.y - ship.y;
             const distSq = dx * dx + dy * dy;
@@ -130,7 +130,8 @@
         }
 
         function checkLanding(ship, body, dist, dt) {
-            if (dist < body.radius) {
+            // --- FIX: Check landing based on ship's BOTTOM ---
+            if (dist < (body.radius + SHIP_HEIGHT / 2)) {
                 const totalVelocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
                 
                 if (totalVelocity > SAFE_LANDING_SPEED) {
@@ -142,7 +143,6 @@
             }
         }
         
-        // --- FIX: This function now orients the ship ---
         function landShip(ship, body) {
             ship.landedOn = body;
             ship.vx = 0;
@@ -150,33 +150,33 @@
             
             // "Stick" ship to surface
             const angleToBody = Math.atan2(ship.y - body.y, ship.x - body.x);
-            ship.x = body.x + Math.cos(angleToBody) * body.radius;
-            ship.y = body.y + Math.sin(angleToBody) * body.radius;
             
-            // --- This is the fix for "upside down" ---
-            // It points the ship "up" (Math.PI / 2) relative to the
-            // angle from the planet's core (angleToBody)
+            // --- FIX: Land with BOTTOM of ship on surface, not center ---
+            const landRadius = body.radius + (SHIP_HEIGHT / 2);
+            ship.x = body.x + Math.cos(angleToBody) * landRadius;
+            ship.y = body.y + Math.sin(angleToBody) * landRadius;
+            
+            // Orient ship
             ship.angle = angleToBody + Math.PI / 2;
         }
 
         function resetShip() {
             ship = {
                 x: 0,
-                y: -EARTH_RADIUS, // Start at the coordinates
+                // --- FIX: Set spawn Y to *on* the surface radius ---
+                y: -EARTH_RADIUS, // landShip will correct this
                 vx: 0,
                 vy: 0,
-                angle: 0, // Angle doesn't matter, landShip will fix it
+                angle: 0, 
                 isThrusting: false,
                 landedOn: null
             };
-            // --- FIX: Call landShip on reset ---
-            // This sticks the ship to the ground and orients it.
-            landShip(ship, earth); 
+            landShip(ship, earth); // Call landShip to position perfectly
             timeWarpIndex = 0;
         }
 
         // --- 6. UPDATE FUNCTION ---
-        // --- REVERTED: This is the original Phase 3 logic ---
+        // --- NO CHANGES to this logic ---
         function update(dt) {
             // Handle Zoom
             if (keys['=']) camera.zoom *= 1.02;
@@ -237,13 +237,16 @@
             }
 
             // Update HUD
-            let altitude = (Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2)) - earth.radius).toFixed(0);
+            // --- FIX: Altitude is distance from surface ---
+            let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
+            let altitude = (distToEarthCenter - earth.radius).toFixed(0);
             let velocity = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy).toFixed(2);
             hud.innerHTML = `Altitude (Earth): ${altitude} m<br>Velocity: ${velocity} m/s<br>Time Warp: ${timeWarpLevels[timeWarpIndex]}x`;
         }
 
         // --- 7. DRAW FUNCTION ---
         function draw() {
+            // No changes here
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -273,14 +276,11 @@
             // Draw the Ship
             ctx.save();
             ctx.translate(ship.x, ship.y);
-            // --- REVERTED: Using the original Phase 3 drawing logic ---
-            // (Note: The DRAW logic and PHYSICS logic are mismatched,
-            // which creates the "feel" you liked)
             ctx.rotate(ship.angle); 
             
             ctx.lineWidth = 1 / camera.zoom; 
             
-            // Draw ship model (points "up" along its Y-axis)
+            // Draw ship model
             ctx.beginPath();
             ctx.moveTo(0, -SHIP_HEIGHT / 2); // Nose
             ctx.lineTo(SHIP_WIDTH / 2, SHIP_HEIGHT / 2); // Back-right
@@ -299,13 +299,14 @@
                 ctx.fillStyle = 'orange';
                 ctx.fill();
             }
-            ctx.restore(); // Restore from ship's rotation
+            ctx.restore(); 
             
-            ctx.restore(); // Restore from camera
+            ctx.restore(); 
         }
 
         // --- 8. GAME LOOP ---
         function gameLoop(timestamp) {
+            // No changes here
             let dt = (timestamp - lastTime) / 1000;
             lastTime = timestamp;
             
@@ -325,7 +326,7 @@
         }
 
         // --- START THE GAME ---
-        resetShip(); // Call reset to land the ship
+        resetShip(); 
         lastTime = performance.now(); 
         requestAnimationFrame(gameLoop); 
 
