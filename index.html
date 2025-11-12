@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lite Spaceflight Sim - Phase 5.2 (Real Fix)</title>
+    <title>Lite Spaceflight Sim - Phase 5.3 (Typo Fix)</title>
     <style>
         body, html {
             margin: 0;
@@ -113,7 +113,7 @@
         // --- 5. PHYSICS & GAME LOGIC ---
 
         function applyGravity(ship, body, dt) {
-            // UNTOUCHED - This is for the *real* ship
+            // UNTOUCHED
             const dx = body.x - ship.x;
             const dy = body.y - ship.y;
             const distSq = dx * dx + dy * dy;
@@ -129,26 +129,21 @@
             return dist; 
         }
 
-        // --- THIS IS THE FIXED PREDICTION FUNCTION ---
+        // --- PREDICTION FUNCTION (Untouched from 5.2) ---
         function getGravityAccel(ghostShip, body) {
             const dx = body.x - ghostShip.x;
             const dy = body.y - ghostShip.y;
             const distSq = dx * dx + dy * dy;
             const dist = Math.sqrt(distSq);
             
-            // --- THE FIX ---
-            // If the predicted distance is INSIDE the planet's radius,
-            // CLAMP the distance to the radius. This stops gravity
-            // from ever becoming infinite (1 / 0.0001).
             let radiusUsed = Math.max(dist, body.radius);
             let distSqUsed = radiusUsed * radiusUsed;
-            // --- END FIX ---
-
-            const accel = body.gm / distSqUsed; // Use the "safe" squared distance
-            const ax = (dx / dist) * accel;     // Apply force along the *real* direction
-            const ay = (dy / dist) * accel;     // Apply force along the *real* direction
             
-            return { ax, ay, dist }; // Still return the *real* dist for the HUD
+            const accel = body.gm / distSqUsed;
+            const ax = (dx / dist) * accel;
+            const ay = (dy / dist) * accel;
+            
+            return { ax, ay, dist };
         }
         // ---------------------------------
 
@@ -211,7 +206,6 @@
             let minDist = Infinity;
 
             for (let i = 0; i < PREDICTION_STEPS; i++) {
-                // This now calls the FIXED getGravityAccel
                 let accelE = getGravityAccel(ghost, earth);
                 let accelM = getGravityAccel(ghost, moon);
                 
@@ -237,7 +231,7 @@
         }
         // -------------------------------------------
 
-        // --- 6. UPDATE FUNCTION (Untouched) ---
+        // --- 6. UPDATE FUNCTION ---
         function update(dt) {
             // UNTOUCHED Zoom
             if (keys['=']) camera.zoom *= 1.02;
@@ -263,7 +257,7 @@
                     ship.vy += accel_y * dt;
                 }
             } else {
-                // IN-FLIGHT LOGIC (Untouched)
+                // IN-FLIGHT LOGIC
                 if (keys.ArrowLeft) {
                     ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
                 }
@@ -274,7 +268,11 @@
                 if (keys.ArrowUp) {
                     ship.isThrusting = true;
                     const accel_x = Math.cos(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
-                    const accel_y = Math.sin(ship.angle - Math.PI 2) * SHIP_THRUST_ACCEL;
+                    
+                    // --- THE SECOND FIX ---
+                    const accel_y = Math.sin(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL; // Was Math.PI 2
+                    // ----------------------
+
                     ship.vx += accel_x * dt;
                     ship.vy += accel_y * dt;
                 }
@@ -308,9 +306,10 @@
                              Time Warp: ${timeWarpLevels[timeWarpIndex]}x`;
         }
         
-        // --- 7. DRAW FUNCTION (Untouched) ---
+        // --- 7. DRAW FUNCTION ---
         
         function drawTrajectory(ctx) {
+            // UNTOUCHED
             if (trajectory.path.length === 0) {
                 return;
             }
@@ -334,7 +333,11 @@
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.scale(camera.zoom, camera.zoom);
             camera.x = ship.x;
-            camera.y = ship.Y; // <-- Oh god, not again
+            
+            // --- THE FIRST FIX ---
+            camera.y = ship.y; // Was ship.Y
+            // ---------------------
+
             ctx.translate(-camera.x, -camera.y);
             
             drawTrajectory(ctx);
