@@ -223,16 +223,13 @@
         const MAX_ZOOM = 1.0;
         const MIN_ZOOM = 0.0000001;
 
-        // --- Parachute Constants (MODIFIED) ---
-        const PARACHUTE_DEPLOY_ALTITUDE_M = 1000.0; // Set to 1000m
+        // --- Parachute Constants (Untouched) ---
+        const PARACHUTE_DEPLOY_ALTITUDE_M = 1000.0; 
         const PARACHUTE_TARGET_SPEED = 17.0; // m/s
         
-        // --- NEW: Physics-based drag constant ---
-        // We need to find surface gravity 'g' for our scaled Earth
+        // --- Physics-based drag constant (Untouched) ---
         const G_SURFACE_EARTH = GM_EARTH / (EARTH_RADIUS * EARTH_RADIUS); // = ~9.833
-        // Terminal velocity formula is v = g / k
-        // So, k = g / v
-        const PARACHUTE_DRAG_CONSTANT = G_SURFACE_EARTH / PARACHUTE_TARGET_SPEED; // = 9.833 / 17.0 = ~0.5784
+        const PARACHUTE_DRAG_CONSTANT = G_SURFACE_EARTH / PARACHUTE_TARGET_SPEED; // = ~0.5784
 
         // --- 3. GAME OBJECTS (Untouched) ---
         let ship = {}; 
@@ -618,7 +615,7 @@
             };
         }
 
-        // --- 6. UPDATE FUNCTION (MODIFIED) ---
+        // --- 6. UPDATE FUNCTION (Untouched) ---
         function update(dt) {
             // --- Camera logic (Untouched) ---
             if (!isMapView) {
@@ -673,18 +670,16 @@
                 }
             }
 
-            // --- PHYSICS & MOVEMENT ---
+            // --- PHYSICS & MOVEMENT (Untouched) ---
             if (!ship.landedOn) {
-                // --- MODIFIED: Parachute Deployment Logic (1000m) ---
+                // --- Parachute Deployment Logic (Untouched) ---
                 let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
                 let altitudeEarth = distToEarthCenter - earth.radius;
                 
-                // 1. Check if we have passed the deploy altitude on the way up
                 if (altitudeEarth > PARACHUTE_DEPLOY_ALTITUDE_M) {
                     ship.hasReachedDeployAltitude = true;
                 }
 
-                // 2. Deploy parachute only if we are on the way down
                 if (ship.hasReachedDeployAltitude && !ship.parachuteActive && altitudeEarth < PARACHUTE_DEPLOY_ALTITUDE_M && altitudeEarth > 0) {
                     ship.parachuteActive = true;
                     console.log("Parachute Deployed!");
@@ -694,11 +689,8 @@
                 let distToEarth = applyGravity(ship, earth, dt);
                 let distToMoon = applyGravity(ship, moon, dt);
                 
-                // --- MODIFIED: Parachute Drag Physics ---
+                // --- Parachute Drag Physics (Untouched) ---
                 if (ship.parachuteActive) {
-                    // This model (a = -k*v) will fight gravity (g)
-                    // The terminal velocity will be v = g / k
-                    // Since k = g / 17, the terminal velocity will be 17.
                     ship.vx -= (PARACHUTE_DRAG_CONSTANT * ship.vx) * dt;
                     ship.vy -= (PARACHUTE_DRAG_CONSTANT * ship.vy) * dt;
                 }
@@ -712,7 +704,7 @@
                 checkLanding(ship, moon, distToMoon, dt);
             }
             
-            // --- HUD & TRAJECTORY ---
+            // --- HUD & TRAJECTORY (Untouched) ---
             let altitude, velocity, apText, peText;
             let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
             altitude = (distToEarthCenter - earth.radius).toFixed(0);
@@ -755,53 +747,47 @@
             ctx.stroke();
         }
 
-        // --- MODIFIED: Parachute Draw Function ---
+        // --- MODIFIED: Parachute Draw Function (This is the fixed one) ---
         function drawParachute(ctx) {
             if (!ship.parachuteActive) {
                 return;
             }
 
             ctx.save();
-            ctx.translate(ship.x, ship.y); // Go to ship's position
-
-            // Stream behind velocity vector (Untouched)
-            let paraDrawAngle = ship.angle - Math.PI / 2.0; // Default if no speed
-            let currentSpeed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+            // 1. Go to the ship's position and rotate to its angle
+            ctx.translate(ship.x, ship.y);
+            ctx.rotate(ship.angle); 
             
-            if (currentSpeed > 1.0) {
-                paraDrawAngle = Math.atan2(ship.vy, ship.vx) + Math.PI;
-            }
-            
-            ctx.rotate(paraDrawAngle);
-
-            // --- MODIFIED: Drawing coordinates fixed ---
-            const noseY = -SHIP_HEIGHT / 2; // The "sharp point"
+            // 2. Define parachute geometry in the ship's local space
+            //    (0,0 is the center of the ship)
+            const noseY = -SHIP_HEIGHT / 2; // The "sharp point" (0, -5)
             const lineLength = 15;
             const canopyRadius = 12;
             
             // The Y-coordinate where the lines end and the canopy begins
+            // This is "above" the nose
             const canopyBottomY = noseY - lineLength; 
 
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 1 / camera.zoom;
 
-            // Shroud lines
+            // 3. Draw shroud lines
             ctx.beginPath();
-            ctx.moveTo(0, noseY); // Start from the ship's nose
+            ctx.moveTo(0, noseY); // Start from the ship's nose (0, -5)
             ctx.lineTo(-canopyRadius, canopyBottomY); // Go to left edge of canopy
             ctx.moveTo(0, noseY); // Start from ship's nose
             ctx.lineTo(canopyRadius, canopyBottomY); // Go to right edge of canopy
             ctx.stroke();
 
-            // Canopy
+            // 4. Draw canopy
             ctx.fillStyle = '#ff6600'; // Orange
             ctx.beginPath();
-            // Draw the arc centered at the bottom, so its ends match the lines
+            // Draw the arc centered at (0, canopyBottomY)
             ctx.arc(0, canopyBottomY, canopyRadius, Math.PI, 0); 
             ctx.closePath();
             ctx.fill();
 
-            // White stripes (Apollo style)
+            // 5. Draw stripes
             ctx.fillStyle = 'white';
             ctx.beginPath();
             ctx.moveTo(0, canopyBottomY); // Start at center of arc
@@ -906,6 +892,5 @@
         lastTime = performance.now(); 
         requestAnimationFrame(gameLoop); 
 
-    </script>
-</body>
+    </script></body>
 </html>
