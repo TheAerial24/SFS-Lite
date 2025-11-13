@@ -483,8 +483,7 @@
             ship.vx += ax * dt;
             ship.vy += ay * dt;
             
-            // --- THIS IS THE FIX ---
-            // I removed the stray "pre" from the end of this line
+            // Typo from before is fixed
             return dist; 
         }
 
@@ -596,8 +595,9 @@
             };
         }
 
-        // --- 6. UPDATE FUNCTION (TYPO FIXED) ---
+        // --- 6. UPDATE FUNCTION (STRUCTURALLY FIXED) ---
         function update(dt) {
+            // --- Camera logic (Untouched) ---
             if (!isMapView) {
                 if (keys['=']) camera.zoom *= 1.02;
                 if (keys['-']) camera.zoom /= 1.02;
@@ -606,27 +606,28 @@
                 camera.zoom = 0.000005;
             }
 
+            // --- Control logic ---
             if (ship.landedOn) {
+                // LANDED CONTROLS
                 if (keys.ArrowLeft) {
                     ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
                 }
                 if (keys.ArrowRight) {
-                    // --- THIS IS THE OTHER FIX ---
-                    // Changed "SHIP_ROWTATION_SPEED" back to "SHIP_ROTATION_SPEED"
                     ship.angle += (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
                 }
                 
                 ship.isThrusting = false;
                 if (keys.ArrowUp) {
-                    ship.landedOn = null; 
+                    ship.landedOn = null; // Takeoff!
                     ship.isThrusting = true;
+                    // Apply initial thrust
                     const accel_x = Math.cos(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
                     const accel_y = Math.sin(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
                     ship.vx += accel_x * dt;
                     ship.vy += accel_y * dt;
                 }
             } else {
-                // IN-FLIGHT LOGIC
+                // IN-FLIGHT CONTROLS
                 if (keys.ArrowLeft) {
                     ship.angle -= (SHIP_ROTATION_SPEED * Math.PI / 180) * dt;
                 }
@@ -636,19 +637,28 @@
                 ship.isThrusting = false;
                 if (keys.ArrowUp) {
                     ship.isThrusting = true;
+                    // Apply continuous thrust
                     const accel_x = Math.cos(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
                     const accel_y = Math.sin(ship.angle - Math.PI / 2) * SHIP_THRUST_ACCEL;
                     ship.vx += accel_x * dt;
                     ship.vy += accel_y * dt;
                 }
+            }
+
+            // --- PHYSICS & MOVEMENT (MOVED) ---
+            // This logic MUST run every frame if the ship is not landed
+            if (!ship.landedOn) {
                 let distToEarth = applyGravity(ship, earth, dt);
                 let distToMoon = applyGravity(ship, moon, dt);
+                
                 ship.x += ship.vx * dt;
                 ship.y += ship.vy * dt;
+                
                 checkLanding(ship, earth, distToEarth, dt);
                 checkLanding(ship, moon, distToMoon, dt);
             }
             
+            // --- HUD & TRAJECTORY ---
             let altitude, velocity, apText, peText;
             let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
             altitude = (distToEarthCenter - earth.radius).toFixed(0);
