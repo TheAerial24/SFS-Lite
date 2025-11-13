@@ -209,7 +209,7 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // --- 2. PHYSICS & SCALING (Untouched) ---
+        // --- 2. PHYSICS & SCALING ---
         const GM_EARTH = 3.986004418e14 / 16.0;
         const GM_MOON = 4.9048695e12 / 16.0;
         const EARTH_RADIUS = 6371000 / 4;
@@ -223,12 +223,16 @@
         const MAX_ZOOM = 1.0;
         const MIN_ZOOM = 0.0000001;
 
-        // --- NEW: Parachute Constants ---
-        // MODIFIED: Changed altitude to 1000m
-        const PARACHUTE_DEPLOY_ALTITUDE_M = 1000.0; 
+        // --- Parachute Constants (MODIFIED) ---
+        const PARACHUTE_DEPLOY_ALTITUDE_M = 1000.0; // Set to 1000m
         const PARACHUTE_TARGET_SPEED = 17.0; // m/s
-        // MODIFIED: Changed drag factor to 1.0 for rapid slowdown
-        const PARACHUTE_DRAG_FACTOR = 1.0; 
+        
+        // --- NEW: Physics-based drag constant ---
+        // We need to find surface gravity 'g' for our scaled Earth
+        const G_SURFACE_EARTH = GM_EARTH / (EARTH_RADIUS * EARTH_RADIUS); // = ~9.833
+        // Terminal velocity formula is v = g / k
+        // So, k = g / v
+        const PARACHUTE_DRAG_CONSTANT = G_SURFACE_EARTH / PARACHUTE_TARGET_SPEED; // = 9.833 / 17.0 = ~0.5784
 
         // --- 3. GAME OBJECTS (Untouched) ---
         let ship = {}; 
@@ -307,7 +311,7 @@
 
         const SAVE_KEY = "sfs_lite_savegame";
 
-        // --- Achievement System Definition (Untouched) ---
+        // --- Achievement System (All Untouched) ---
         const achievements = {
             'orbit': {
                 name: "Stable Orbit",
@@ -354,7 +358,6 @@
             }
         };
 
-        // --- Notification Pop-up Function (Untouched) ---
         function showNotification(name, description) {
             if (notificationTimer) {
                 clearTimeout(notificationTimer);
@@ -367,7 +370,6 @@
             }, 4000);
         }
 
-        // --- Function to safely get save data (Untouched) ---
         function getSaveState() {
             const saveString = localStorage.getItem(SAVE_KEY);
             if (saveString) {
@@ -381,7 +383,6 @@
             return {};
         }
 
-        // --- Function to save achievement data automatically (Untouched) ---
         function saveAchievements() {
             let saveState = getSaveState();
             
@@ -397,7 +398,6 @@
             console.log("Permanent achievement data saved!");
         }
 
-        // --- Function to load achievements on game start (Untouched) ---
         function loadAchievements() {
             const saveState = getSaveState();
                 
@@ -415,7 +415,6 @@
             console.log("Permanent achievement data loaded!");
         }
 
-        // --- Achievement Checking Function (Untouched) ---
         function checkAchievements(ship, trajectory) {
             for (const id in achievements) {
                 const achievement = achievements[id];
@@ -430,7 +429,6 @@
             }
         }
 
-        // --- Achievement Modal Function (Untouched) ---
         function toggleAchievementsModal(show) {
             if (show) {
                 achievementList.innerHTML = ''; // Clear old list
@@ -454,7 +452,6 @@
             }
         }
 
-        // --- Save/Load Functions (Untouched) ---
         function saveGame() {
             if (ship.landedOn) {
                 let saveState = getSaveState();
@@ -678,7 +675,7 @@
 
             // --- PHYSICS & MOVEMENT ---
             if (!ship.landedOn) {
-                // --- MODIFIED: Parachute Deployment Logic ---
+                // --- MODIFIED: Parachute Deployment Logic (1000m) ---
                 let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
                 let altitudeEarth = distToEarthCenter - earth.radius;
                 
@@ -697,17 +694,13 @@
                 let distToEarth = applyGravity(ship, earth, dt);
                 let distToMoon = applyGravity(ship, moon, dt);
                 
-                // Apply Parachute Drag (Untouched, but factor is now 1.0)
+                // --- MODIFIED: Parachute Drag Physics ---
                 if (ship.parachuteActive) {
-                    let currentSpeed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-                    if (currentSpeed > PARACHUTE_TARGET_SPEED) {
-                        let dragForce = (currentSpeed - PARACHUTE_TARGET_SPEED) * PARACHUTE_DRAG_FACTOR;
-                        let dragAx = (ship.vx / currentSpeed) * dragForce;
-                        let dragAy = (ship.vy / currentSpeed) * dragForce;
-                        
-                        ship.vx -= dragAx * dt;
-                        ship.vy -= dragAy * dt;
-                    }
+                    // This model (a = -k*v) will fight gravity (g)
+                    // The terminal velocity will be v = g / k
+                    // Since k = g / 17, the terminal velocity will be 17.
+                    ship.vx -= (PARACHUTE_DRAG_CONSTANT * ship.vx) * dt;
+                    ship.vy -= (PARACHUTE_DRAG_CONSTANT * ship.vy) * dt;
                 }
 
                 // Apply Velocity (Untouched)
@@ -771,51 +764,49 @@
             ctx.save();
             ctx.translate(ship.x, ship.y); // Go to ship's position
 
-            // --- MODIFIED: Reverted to streaming behind velocity ---
+            // Stream behind velocity vector (Untouched)
             let paraDrawAngle = ship.angle - Math.PI / 2.0; // Default if no speed
             let currentSpeed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
             
             if (currentSpeed > 1.0) {
-                // Angle of the velocity, plus 180 degrees (Math.PI) to point behind
                 paraDrawAngle = Math.atan2(ship.vy, ship.vx) + Math.PI;
             }
             
             ctx.rotate(paraDrawAngle);
 
-            // --- MODIFIED: Draw "above" the ship's CENTER (0,0) ---
-            const paraHeight = 25;
-            const paraWidth = 15;
-            const canopyRadius = paraWidth * 0.8;
+            // --- MODIFIED: Drawing coordinates fixed ---
+            const noseY = -SHIP_HEIGHT / 2; // The "sharp point"
+            const lineLength = 15;
+            const canopyRadius = 12;
             
-            // Y-coordinates are negative to draw "up" from the ship's center
-            const canopyBottomY = -(paraHeight / 2.0); // Start lines "above" ship
-            const canopyCenterY = canopyBottomY - canopyRadius;
+            // The Y-coordinate where the lines end and the canopy begins
+            const canopyBottomY = noseY - lineLength; 
 
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 1 / camera.zoom;
 
             // Shroud lines
             ctx.beginPath();
-            ctx.moveTo(0, 0); // Start from ship center
-            ctx.lineTo(-paraWidth/2, canopyBottomY);
-            ctx.moveTo(0, 0);
-            ctx.lineTo(paraWidth/2, canopyBottomY);
+            ctx.moveTo(0, noseY); // Start from the ship's nose
+            ctx.lineTo(-canopyRadius, canopyBottomY); // Go to left edge of canopy
+            ctx.moveTo(0, noseY); // Start from ship's nose
+            ctx.lineTo(canopyRadius, canopyBottomY); // Go to right edge of canopy
             ctx.stroke();
 
             // Canopy
             ctx.fillStyle = '#ff6600'; // Orange
             ctx.beginPath();
-            // --- MODIFIED: Flipped arc to draw the top semi-circle ---
-            ctx.arc(0, canopyCenterY, canopyRadius, Math.PI, 0); 
+            // Draw the arc centered at the bottom, so its ends match the lines
+            ctx.arc(0, canopyBottomY, canopyRadius, Math.PI, 0); 
             ctx.closePath();
             ctx.fill();
 
             // White stripes (Apollo style)
             ctx.fillStyle = 'white';
             ctx.beginPath();
-            ctx.moveTo(0, canopyCenterY);
-            // --- MODIFIED: Fixed stripe logic to be in the top-center ---
-            ctx.arc(0, canopyCenterY, canopyRadius, -Math.PI/2 - Math.PI/8, -Math.PI/2 + Math.PI/8);
+            ctx.moveTo(0, canopyBottomY); // Start at center of arc
+            // Draw a "pie slice" from the same center
+            ctx.arc(0, canopyBottomY, canopyRadius, -Math.PI/2 - Math.PI/8, -Math.PI/2 + Math.PI/8);
             ctx.closePath();
             ctx.fill();
 
