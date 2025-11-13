@@ -226,12 +226,14 @@
         // --- Parachute Constants (Untouched) ---
         const PARACHUTE_DEPLOY_ALTITUDE_M = 1000.0; 
         const PARACHUTE_TARGET_SPEED = 17.0; // m/s
-        
-        // --- Physics-based drag constant (Untouched) ---
         const G_SURFACE_EARTH = GM_EARTH / (EARTH_RADIUS * EARTH_RADIUS); 
         const PARACHUTE_DRAG_CONSTANT = G_SURFACE_EARTH / PARACHUTE_TARGET_SPEED; 
 
-        // --- 3. GAME OBJECTS (Untouched) ---
+        // --- NEW: Atmospheric Drag Constants ---
+        const EARTH_ATMOSPHERE_HEIGHT = 40000; // 40km
+        const MAX_ATMOSPHERIC_DRAG = 0.5; // Controls strength of drag
+
+        // --- 3. GAME OBJECTS ---
         let ship = {}; 
         const earth = {
             x: 0, y: 0,
@@ -256,6 +258,20 @@
         let isMapView = false;
         let historyLog = [];
         let lastHistorySave = 0;
+
+        // --- NEW: Starfield ---
+        let starfield = [];
+        function generateStarfield(numStars) {
+            for(let i = 0; i < numStars; i++) {
+                starfield.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 2 + 0.5,
+                    parallax: Math.random() * 0.1 + 0.05 // How much they move
+                });
+            }
+        }
+        generateStarfield(500); // Create 500 stars
 
         // --- Achievement Tracking Variable (Untouched) ---
         let hasLandedOnMoon = false; 
@@ -308,7 +324,7 @@
 
         const SAVE_KEY = "sfs_lite_savegame";
 
-        // --- MODIFIED: Achievement System Definition ---
+        // --- Achievement System (Untouched) ---
         const achievements = {
             'orbit': {
                 name: "Stable Orbit",
@@ -353,13 +369,11 @@
                     return hasLandedOnMoon && ship.landedOn === earth;
                 }
             },
-            // --- 5 NEW ACHIEVEMENTS ---
             'lunarFlyBy': {
                 name: "Lunar Fly-by",
                 description: "Pass within 10,000m of the Moon's surface without landing.",
                 unlocked: false,
                 check: (ship, trajectory) => {
-                    // Need to calculate distance to Moon
                     let distToMoonCenter = Math.sqrt(Math.pow(ship.x - moon.x, 2) + Math.pow(ship.y - moon.y, 2));
                     let altitudeMoon = distToMoonCenter - moon.radius;
                     return !ship.landedOn && altitudeMoon < 10000;
@@ -370,7 +384,6 @@
                 description: "Travel more than 2x the Moon's distance from Earth.",
                 unlocked: false,
                 check: (ship, trajectory) => {
-                    // MOON_DISTANCE is the semi-major axis, so 2x that.
                     let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
                     return distToEarthCenter > (MOON_DISTANCE * 2);
                 }
@@ -380,7 +393,6 @@
                 description: "Set your periapsis on a re-entry course with Earth.",
                 unlocked: false,
                 check: (ship, trajectory) => {
-                    // Periapsis is altitude, so 0 is surface. < 0 is a crash.
                     return !ship.landedOn && trajectory.periapsis < 0;
                 }
             },
@@ -389,7 +401,6 @@
                 description: "Engage the maximum time warp.",
                 unlocked: false,
                 check: (ship, trajectory) => {
-                    // timeWarpIndex is 0-based, length is 1-based.
                     return timeWarpIndex === (timeWarpLevels.length - 1);
                 }
             },
@@ -403,7 +414,7 @@
             }
         };
 
-        // --- Notification Pop-up Function (Untouched) ---
+        // --- Notification & Save/Load Functions (All Untouched) ---
         function showNotification(name, description) {
             if (notificationTimer) {
                 clearTimeout(notificationTimer);
@@ -416,7 +427,6 @@
             }, 4000);
         }
 
-        // --- Function to safely get save data (Untouched) ---
         function getSaveState() {
             const saveString = localStorage.getItem(SAVE_KEY);
             if (saveString) {
@@ -430,7 +440,6 @@
             return {};
         }
 
-        // --- Function to save achievement data automatically (Untouched) ---
         function saveAchievements() {
             let saveState = getSaveState();
             
@@ -446,7 +455,6 @@
             console.log("Permanent achievement data saved!");
         }
 
-        // --- Function to load achievements on game start (Untouched) ---
         function loadAchievements() {
             const saveState = getSaveState();
                 
@@ -464,13 +472,11 @@
             console.log("Permanent achievement data loaded!");
         }
 
-        // --- Achievement Checking Function (Untouched) ---
         function checkAchievements(ship, trajectory) {
             for (const id in achievements) {
                 const achievement = achievements[id];
                 
                 if (!achievement.unlocked) {
-                    // We pass all state variables to every check
                     if (achievement.check(ship, trajectory)) { 
                         achievement.unlocked = true;
                         showNotification(achievement.name, achievement.description);
@@ -480,7 +486,6 @@
             }
         }
 
-        // --- Achievement Modal Function (Untouched) ---
         function toggleAchievementsModal(show) {
             if (show) {
                 achievementList.innerHTML = ''; // Clear old list
@@ -504,7 +509,6 @@
             }
         }
 
-        // --- Save/Load Functions (Untouched) ---
         function saveGame() {
             if (ship.landedOn) {
                 let saveState = getSaveState();
@@ -671,7 +675,7 @@
             };
         }
 
-        // --- 6. UPDATE FUNCTION (Untouched) ---
+        // --- 6. UPDATE FUNCTION (MODIFIED) ---
         function update(dt) {
             // --- Camera logic (Untouched) ---
             if (!isMapView) {
@@ -726,16 +730,16 @@
                 }
             }
 
-            // --- PHYSICS & MOVEMENT (Untouched) ---
+            // --- PHYSICS & MOVEMENT ---
             if (!ship.landedOn) {
-                // --- Parachute Deployment Logic (Untouched) ---
+                
                 let distToEarthCenter = Math.sqrt(Math.pow(ship.x - earth.x, 2) + Math.pow(ship.y - earth.y, 2));
                 let altitudeEarth = distToEarthCenter - earth.radius;
                 
+                // --- Parachute Deployment Logic (Untouched) ---
                 if (altitudeEarth > PARACHUTE_DEPLOY_ALTITUDE_M) {
                     ship.hasReachedDeployAltitude = true;
                 }
-
                 if (ship.hasReachedDeployAltitude && !ship.parachuteActive && altitudeEarth < PARACHUTE_DEPLOY_ALTITUDE_M && altitudeEarth > 0) {
                     ship.parachuteActive = true;
                     console.log("Parachute Deployed!");
@@ -750,6 +754,22 @@
                     ship.vx -= (PARACHUTE_DRAG_CONSTANT * ship.vx) * dt;
                     ship.vy -= (PARACHUTE_DRAG_CONSTANT * ship.vy) * dt;
                 }
+
+                // --- NEW: Atmospheric Drag Physics ---
+                // Only apply if in Earth's atmosphere AND parachute is not active
+                if (!ship.parachuteActive && altitudeEarth > 0 && altitudeEarth < EARTH_ATMOSPHERE_HEIGHT) {
+                    // Calculate density (1.0 at sea level, 0.0 at 40km)
+                    const atmDensity = (1.0 - (altitudeEarth / EARTH_ATMOSPHERE_HEIGHT));
+                    const currentSpeed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+                    
+                    if (currentSpeed > 0) {
+                        // Simple drag model: a = -k * v * density
+                        const drag = currentSpeed * atmDensity * MAX_ATMOSPHERIC_DRAG;
+                        ship.vx -= (ship.vx / currentSpeed) * drag * dt;
+                        ship.vy -= (ship.vy / currentSpeed) * drag * dt;
+                    }
+                }
+
 
                 // Apply Velocity (Untouched)
                 ship.x += ship.vx * dt;
@@ -785,7 +805,7 @@
                              Time Warp: ${timeWarpLevels[timeWarpIndex]}x`;
         }
         
-        // --- 7. DRAW FUNCTION (Untouched) ---
+        // --- 7. DRAW FUNCTION (MODIFIED) ---
         
         function drawTrajectory(ctx) {
             if (trajectory.path.length === 0) {
@@ -803,51 +823,40 @@
             ctx.stroke();
         }
 
-        // --- Parachute Draw Function (This is the fixed, locked one) ---
+        // --- Parachute Draw Function (Untouched) ---
         function drawParachute(ctx) {
             if (!ship.parachuteActive) {
                 return;
             }
 
             ctx.save();
-            // 1. Go to the ship's position and rotate to its angle
             ctx.translate(ship.x, ship.y);
             ctx.rotate(ship.angle); 
             
-            // 2. Define parachute geometry in the ship's local space
-            //    (0,0 is the center of the ship)
-            const noseY = -SHIP_HEIGHT / 2; // The "sharp point" (0, -5)
+            const noseY = -SHIP_HEIGHT / 2; 
             const lineLength = 15;
             const canopyRadius = 12;
-            
-            // The Y-coordinate where the lines end and the canopy begins
-            // This is "above" the nose
             const canopyBottomY = noseY - lineLength; 
 
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 1 / camera.zoom;
 
-            // 3. Draw shroud lines
             ctx.beginPath();
-            ctx.moveTo(0, noseY); // Start from the ship's nose (0, -5)
-            ctx.lineTo(-canopyRadius, canopyBottomY); // Go to left edge of canopy
-            ctx.moveTo(0, noseY); // Start from ship's nose
-            ctx.lineTo(canopyRadius, canopyBottomY); // Go to right edge of canopy
+            ctx.moveTo(0, noseY); 
+            ctx.lineTo(-canopyRadius, canopyBottomY);
+            ctx.moveTo(0, noseY); 
+            ctx.lineTo(canopyRadius, canopyBottomY); 
             ctx.stroke();
 
-            // 4. Draw canopy
-            ctx.fillStyle = '#ff6600'; // Orange
+            ctx.fillStyle = '#ff6600'; 
             ctx.beginPath();
-            // Draw the arc centered at (0, canopyBottomY)
             ctx.arc(0, canopyBottomY, canopyRadius, Math.PI, 0); 
             ctx.closePath();
             ctx.fill();
 
-            // 5. Draw stripes
             ctx.fillStyle = 'white';
             ctx.beginPath();
-            ctx.moveTo(0, canopyBottomY); // Start at center of arc
-            // Draw a "pie slice" from the same center
+            ctx.moveTo(0, canopyBottomY); 
             ctx.arc(0, canopyBottomY, canopyRadius, -Math.PI/2 - Math.PI/8, -Math.PI/2 + Math.PI/8);
             ctx.closePath();
             ctx.fill();
@@ -855,9 +864,39 @@
             ctx.restore();
         }
 
+        // --- NEW: Starfield Draw Function ---
+        function drawStarfield(ctx, camera) {
+            ctx.save();
+            ctx.fillStyle = 'white';
+            // Translate to center, but don't scale with zoom
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            
+            for(const star of starfield) {
+                // Calculate star position based on camera, with parallax
+                // The (camera.x * star.parallax) makes distant stars move slower
+                let screenX = (star.x - canvas.width / 2) - (camera.x * star.parallax * camera.zoom);
+                let screenY = (star.y - canvas.height / 2) - (camera.y * star.parallax * camera.zoom);
+
+                // Wrap stars around the screen
+                screenX = (screenX % canvas.width + canvas.width) % canvas.width;
+                screenY = (screenY % canvas.height + canvas.height) % canvas.height;
+
+                // Adjust back from center
+                screenX -= canvas.width / 2;
+                screenY -= canvas.height / 2;
+
+                ctx.fillRect(screenX, screenY, star.size, star.size);
+            }
+            ctx.restore();
+        }
+
         function draw() {
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // --- NEW: Draw stars first, behind everything ---
+            drawStarfield(ctx, camera);
+
             ctx.save();
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.scale(camera.zoom, camera.zoom);
@@ -888,11 +927,36 @@
             // Draw parachute *before* ship so ship is on top
             drawParachute(ctx);
 
-            // Draw the Ship (Untouched)
+            // Draw the Ship
             ctx.save();
             ctx.translate(ship.x, ship.y);
             ctx.rotate(ship.angle); 
             ctx.lineWidth = 1 / camera.zoom; 
+            
+            // --- MODIFIED: Draw animated flame ---
+            if (ship.isThrusting) {
+                // Outer, bigger, orange flame (flickers)
+                let flameLength = (SHIP_HEIGHT / 2 + 7) + (Math.random() * 4);
+                ctx.fillStyle = 'rgba(255, 165, 0, 0.7)'; // Orange
+                ctx.beginPath();
+                ctx.moveTo(0, SHIP_HEIGHT / 2);
+                ctx.lineTo(-SHIP_WIDTH / 2 - 1, flameLength);
+                ctx.lineTo(SHIP_WIDTH / 2 + 1, flameLength);
+                ctx.closePath();
+                ctx.fill();
+
+                // Inner, smaller, yellow flame (flickers)
+                let coreFlameLength = (SHIP_HEIGHT / 2 + 5) + (Math.random() * 3);
+                ctx.fillStyle = 'rgba(255, 255, 0, 1)'; // Yellow
+                ctx.beginPath();
+                ctx.moveTo(0, SHIP_HEIGHT / 2);
+                ctx.lineTo(-SHIP_WIDTH / 2, coreFlameLength);
+                ctx.lineTo(SHIP_WIDTH / 2, coreFlameLength);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Draw ship body (on top of flame)
             ctx.beginPath();
             ctx.moveTo(0, -SHIP_HEIGHT / 2);
             ctx.lineTo(SHIP_WIDTH / 2, SHIP_HEIGHT / 2);
@@ -900,15 +964,7 @@
             ctx.closePath();
             ctx.strokeStyle = 'white';
             ctx.stroke();
-            if (ship.isThrusting) {
-                ctx.beginPath();
-                ctx.moveTo(0, SHIP_HEIGHT / 2);
-                ctx.lineTo(-SHIP_WIDTH / 2, SHIP_HEIGHT / 2 + 7);
-                ctx.lineTo(SHIP_WIDTH / 2, SHIP_HEIGHT / 2 + 7);
-                ctx.closePath();
-                ctx.fillStyle = 'orange';
-                ctx.fill();
-            }
+            
             ctx.restore(); 
             ctx.restore();
         }
