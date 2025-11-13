@@ -46,7 +46,7 @@
             background-color: #555;
         }
 
-        /* --- NEW: Achievement Notification Pop-up --- */
+        /* --- Achievement Notification Pop-up (Untouched) --- */
         #notification-box {
             position: fixed;
             bottom: 20px;
@@ -77,7 +77,7 @@
             font-size: 14px;
         }
 
-        /* --- NEW: Achievement Modal (List) --- */
+        /* --- Achievement Modal (List) (Untouched) --- */
         #modal-overlay {
             position: fixed;
             top: 0;
@@ -249,8 +249,8 @@
         let historyLog = [];
         let lastHistorySave = 0;
 
-        // --- NEW: Achievement Tracking Variable ---
-        let hasLandedOnMoon = false;
+        // --- MODIFIED: Achievement Tracking Variable ---
+        let hasLandedOnMoon = false; // This is now loaded from localStorage
 
         // --- 4. CONTROLS & TIME (Untouched) ---
         const keys = {
@@ -300,7 +300,7 @@
 
         const SAVE_KEY = "sfs_lite_savegame";
 
-        // --- MODIFIED: Achievement System Definition (NEW ACHIEVEMENTS ADDED) ---
+        // --- Achievement System Definition (Untouched) ---
         const achievements = {
             'orbit': {
                 name: "Stable Orbit",
@@ -320,7 +320,7 @@
                     return altitude > 1000000;
                 }
             },
-            'highSpeed': { // NEW ACHIEVEMENT
+            'highSpeed': { 
                 name: "Speed Demon",
                 description: "Exceed a velocity of 2000 m/s.",
                 unlocked: false,
@@ -337,36 +337,76 @@
                     return ship.landedOn === moon;
                 }
             },
-            'moonAndBack': { // NEW ACHIEVEMENT
+            'moonAndBack': { 
                 name: "There and Back Again",
                 description: "Land on the Moon and return safely to Earth.",
                 unlocked: false,
                 check: (ship, trajectory) => {
-                    // This relies on the 'hasLandedOnMoon' variable being set
                     return hasLandedOnMoon && ship.landedOn === earth;
                 }
             }
         };
 
-        // --- NEW: Function to show green pop-up notification ---
+        // --- Notification Pop-up Function (Untouched) ---
         function showNotification(name, description) {
-            // Clear any existing timer to prevent hiding a new notification too early
             if (notificationTimer) {
                 clearTimeout(notificationTimer);
             }
-            
-            // Set the content
             notificationBox.innerHTML = `<h4>${name}</h4><p>${description}</p>`;
-            
-            // Show the notification
             notificationBox.classList.add('show');
-            
-            // Set a timer to hide it after 4 seconds
             notificationTimer = setTimeout(() => {
                 notificationBox.classList.remove('show');
                 notificationTimer = null;
             }, 4000);
         }
+
+        // --- NEW: Function to save achievement data automatically ---
+        function saveAchievements() {
+            // 1. Get the current save state (if it exists)
+            const saveString = localStorage.getItem(SAVE_KEY);
+            let saveState = {};
+            if (saveString) {
+                saveState = JSON.parse(saveString);
+            }
+            
+            // 2. Build the achievement state
+            let achievementsState = {};
+            for (const id in achievements) {
+                achievementsState[id] = achievements[id].unlocked;
+            }
+
+            // 3. Update the save state with new achievement data
+            saveState.achievements = achievementsState;
+            saveState.hasLandedOnMoon = hasLandedOnMoon;
+
+            // 4. Save back to localStorage
+            localStorage.setItem(SAVE_KEY, JSON.stringify(saveState));
+            console.log("Permanent achievement data saved!");
+        }
+
+        // --- NEW: Function to load achievements on game start ---
+        function loadAchievements() {
+            const saveString = localStorage.getItem(SAVE_KEY);
+            if (saveString) {
+                const saveState = JSON.parse(saveString);
+                
+                // Load achievements
+                if (saveState.achievements) {
+                    for (const id in saveState.achievements) {
+                        if (achievements[id]) {
+                            achievements[id].unlocked = saveState.achievements[id];
+                        }
+                    }
+                }
+                
+                // Load moon landing flag
+                if (saveState.hasLandedOnMoon) {
+                    hasLandedOnMoon = saveState.hasLandedOnMoon;
+                }
+                console.log("Permanent achievement data loaded!");
+            }
+        }
+
 
         // --- MODIFIED: Achievement Checking Function ---
         function checkAchievements(ship, trajectory) {
@@ -377,15 +417,16 @@
                     if (achievement.check(ship, trajectory)) {
                         achievement.unlocked = true;
                         showNotification(achievement.name, achievement.description);
+                        // --- NEW: Automatically save when one is unlocked ---
+                        saveAchievements(); 
                     }
                 }
             }
         }
 
-        // --- NEW: Function to toggle the achievements list modal ---
+        // --- Achievement Modal Function (Untouched) ---
         function toggleAchievementsModal(show) {
             if (show) {
-                // Build the list from the achievements object
                 achievementList.innerHTML = ''; // Clear old list
                 for (const id in achievements) {
                     const ach = achievements[id];
@@ -399,76 +440,70 @@
                     }
                     achievementList.appendChild(li);
                 }
-
-                // Show the modal
                 modalOverlay.style.display = 'block';
                 achievementsModal.style.display = 'block';
             } else {
-                // Hide the modal
                 modalOverlay.style.display = 'none';
                 achievementsModal.style.display = 'none';
             }
         }
 
-        // --- MODIFIED: Save/Load Functions (To track new variable) ---
+        // --- MODIFIED: Save/Load Functions ---
+        // SaveGame now ONLY saves the ship's position
         function saveGame() {
             if (ship.landedOn) {
-                let achievementsState = {};
-                for (const id in achievements) {
-                    achievementsState[id] = achievements[id].unlocked;
+                // 1. Get existing save data
+                const saveString = localStorage.getItem(SAVE_KEY);
+                let saveState = {};
+                if (saveString) {
+                    saveState = JSON.parse(saveString);
                 }
-                const saveState = {
-                    ship: ship,
-                    achievements: achievementsState,
-                    hasLandedOnMoon: hasLandedOnMoon // Save the new variable
-                };
-                const saveString = JSON.stringify(saveState);
-                localStorage.setItem(SAVE_KEY, saveString);
-                showNotification("Game Saved", "Your progress has been saved.");
+                
+                // 2. Add/update the ship data
+                saveState.ship = ship;
+                
+                // 3. Save back to localStorage
+                localStorage.setItem(SAVE_KEY, JSON.stringify(saveState));
+                showNotification("Game Saved", "Your ship's position has been saved.");
             } else {
-                showNotification("Save Failed", "You can only save while landed.");
+                showNotification("Save Failed", "You can only save ship position while landed.");
             }
         }
         
+        // LoadGame now ONLY loads the ship's position
         function loadGame() {
             const saveString = localStorage.getItem(SAVE_KEY);
             if (saveString) {
                 const saveState = JSON.parse(saveString);
-                ship = saveState.ship;
                 
-                if (saveState.achievements) {
-                    for (const id in saveState.achievements) {
-                        if (achievements[id]) {
-                            achievements[id].unlocked = saveState.achievements[id];
-                        }
-                    }
+                // Check if ship data exists
+                if (saveState.ship) {
+                    ship = saveState.ship;
+                    
+                    // Reset systems
+                    historyLog = [];
+                    trajectory.path = [];
+                    timeWarpIndex = 0;
+                    isMapView = false; 
+                    
+                    showNotification("Game Loaded", "Your ship's position has been loaded.");
+                } else {
+                    showNotification("Load Failed", "No saved ship position found!");
                 }
-                
-                // Load the new variable
-                hasLandedOnMoon = saveState.hasLandedOnMoon || false;
-
-                historyLog = [];
-                trajectory.path = [];
-                timeWarpIndex = 0;
-                isMapView = false; 
-                
-                showNotification("Game Loaded", "Your saved game has been loaded.");
             } else {
-                showNotification("Load Failed", "No save game found.");
+                showNotification("Load Failed", "No save game found!");
             }
         }
         
-        // --- Hook up buttons ---
+        // --- Hook up buttons (Untouched) ---
         saveButton.addEventListener('click', saveGame);
         loadButton.addEventListener('click', loadGame);
-
-        // --- NEW: Hook up modal buttons ---
         viewAchievementsButton.addEventListener('click', () => toggleAchievementsModal(true));
         closeModalButton.addEventListener('click', () => toggleAchievementsModal(false));
         modalOverlay.addEventListener('click', () => toggleAchievementsModal(false));
 
 
-        // --- All other functions are UNTOUCHED (except landShip and resetShip) ---
+        // --- Gravity/Physics Functions (Untouched) ---
 
         function applyGravity(ship, body, dt) {
             const dx = body.x - ship.x;
@@ -483,7 +518,6 @@
             ship.vx += ax * dt;
             ship.vy += ay * dt;
             
-            // Typo from before is fixed
             return dist; 
         }
 
@@ -509,13 +543,14 @@
                 
                 if (totalVelocity > SAFE_LANDING_SPEED) {
                     console.log("CRASH! Speed: " + totalVelocity);
-                    resetShip();
+                    resetShip(); // This will just reset the ship, not achievements
                 } else {
                     landShip(ship, body);
                 }
             }
         }
         
+        // --- MODIFIED: landShip ---
         function landShip(ship, body) {
             ship.landedOn = body;
             ship.vx = 0;
@@ -527,12 +562,17 @@
             ship.y = body.y + Math.sin(angleToBody) * landRadius;
             ship.angle = angleToBody + Math.PI / 2;
 
-            // --- NEW: Logic for achievement tracking ---
             if (body === moon) {
-                hasLandedOnMoon = true;
+                // Check if this is the first time landing
+                if (!hasLandedOnMoon) { 
+                    hasLandedOnMoon = true;
+                    // --- NEW: Automatically save this flag ---
+                    saveAchievements(); 
+                }
             }
         }
 
+        // --- MODIFIED: resetShip ---
         function resetShip() {
             ship = {
                 x: 0,
@@ -547,11 +587,10 @@
             timeWarpIndex = 0;
             historyLog = [];
             
-            // --- NEW: Reset achievement variables ---
-            hasLandedOnMoon = false; 
-            for (const id in achievements) {
-                achievements[id].unlocked = false;
-            }
+            // --- REMOVED ---
+            // The loop that reset achievements is GONE.
+            // `hasLandedOnMoon = false` is also GONE.
+            // Achievements are now persistent.
         }
 
         // --- TRAJECTORY CALCULATION (Untouched) ---
@@ -595,7 +634,7 @@
             };
         }
 
-        // --- 6. UPDATE FUNCTION (STRUCTURALLY FIXED) ---
+        // --- 6. UPDATE FUNCTION (This is the fixed version) ---
         function update(dt) {
             // --- Camera logic (Untouched) ---
             if (!isMapView) {
@@ -645,8 +684,7 @@
                 }
             }
 
-            // --- PHYSICS & MOVEMENT (MOVED) ---
-            // This logic MUST run every frame if the ship is not landed
+            // --- PHYSICS & MOVEMENT (This logic is fixed) ---
             if (!ship.landedOn) {
                 let distToEarth = applyGravity(ship, earth, dt);
                 let distToMoon = applyGravity(ship, moon, dt);
@@ -777,7 +815,7 @@
             let steps = Math.min(100, Math.max(1, warpedDt / 0.016)); 
             let stepDt = warpedDt / steps;
             
-            for (let i = 0; i < steps; i++) {
+            for (let i = 0; i < steps.length; i++) {
                 update(stepDt);
             }
             
@@ -785,8 +823,9 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // --- START THE GAME (Untouched) ---
-        resetShip(); 
+        // --- MODIFIED: START THE GAME ---
+        loadAchievements(); // Load permanent progress first
+        resetShip();        // Reset the ship to the launchpad
         lastTime = performance.now(); 
         requestAnimationFrame(gameLoop); 
 
