@@ -223,11 +223,12 @@
         const MAX_ZOOM = 1.0;
         const MIN_ZOOM = 0.0000001;
 
-        // --- Parachute Constants (Untouched) ---
-        const PARACHUTE_DEPLOY_ALTITUDE_FT = 2500.0;
-        const PARACHUTE_DEPLOY_ALTITUDE_M = PARACHUTE_DEPLOY_ALTITUDE_FT * 0.3048; // = 762m
+        // --- NEW: Parachute Constants ---
+        // MODIFIED: Changed altitude to 1000m
+        const PARACHUTE_DEPLOY_ALTITUDE_M = 1000.0; 
         const PARACHUTE_TARGET_SPEED = 17.0; // m/s
-        const PARACHUTE_DRAG_FACTOR = 0.05; 
+        // MODIFIED: Changed drag factor to 1.0 for rapid slowdown
+        const PARACHUTE_DRAG_FACTOR = 1.0; 
 
         // --- 3. GAME OBJECTS (Untouched) ---
         let ship = {}; 
@@ -538,7 +539,7 @@
             }
         }
         
-        // --- MODIFIED: landShip ---
+        // --- landShip (Untouched) ---
         function landShip(ship, body) {
             ship.landedOn = body;
             ship.vx = 0;
@@ -557,12 +558,11 @@
                 }
             }
 
-            // --- NEW: Reset parachute flags on landing ---
             ship.parachuteActive = false;
             ship.hasReachedDeployAltitude = false;
         }
 
-        // --- MODIFIED: resetShip ---
+        // --- resetShip (Untouched) ---
         function resetShip() {
             ship = {
                 x: 0,
@@ -572,14 +572,12 @@
                 angle: 0, 
                 isThrusting: false,
                 landedOn: null,
-                parachuteActive: false, // NEW
-                hasReachedDeployAltitude: false // NEW
+                parachuteActive: false, 
+                hasReachedDeployAltitude: false 
             };
             landShip(ship, earth); 
             timeWarpIndex = 0;
             historyLog = [];
-            
-            // Achievements are NOT reset
         }
 
         // --- TRAJECTORY CALCULATION (Untouched) ---
@@ -699,7 +697,7 @@
                 let distToEarth = applyGravity(ship, earth, dt);
                 let distToMoon = applyGravity(ship, moon, dt);
                 
-                // Apply Parachute Drag (Untouched)
+                // Apply Parachute Drag (Untouched, but factor is now 1.0)
                 if (ship.parachuteActive) {
                     let currentSpeed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
                     if (currentSpeed > PARACHUTE_TARGET_SPEED) {
@@ -773,25 +771,34 @@
             ctx.save();
             ctx.translate(ship.x, ship.y); // Go to ship's position
 
-            // --- MODIFIED: Rotate with the ship's "up" direction ---
-            ctx.rotate(ship.angle - Math.PI / 2.0);
+            // --- MODIFIED: Reverted to streaming behind velocity ---
+            let paraDrawAngle = ship.angle - Math.PI / 2.0; // Default if no speed
+            let currentSpeed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+            
+            if (currentSpeed > 1.0) {
+                // Angle of the velocity, plus 180 degrees (Math.PI) to point behind
+                paraDrawAngle = Math.atan2(ship.vy, ship.vx) + Math.PI;
+            }
+            
+            ctx.rotate(paraDrawAngle);
 
-            // --- MODIFIED: Draw "above" the ship's nose ---
+            // --- MODIFIED: Draw "above" the ship's CENTER (0,0) ---
             const paraHeight = 25;
             const paraWidth = 15;
             const canopyRadius = paraWidth * 0.8;
-            const shipNoseY = -SHIP_HEIGHT / 2; // Top of the ship triangle
-            const canopyBottomY = shipNoseY - paraHeight; // Y-coord where canopy starts
-            const canopyCenterY = canopyBottomY + canopyRadius; // Y-coord for the arc center
+            
+            // Y-coordinates are negative to draw "up" from the ship's center
+            const canopyBottomY = -(paraHeight / 2.0); // Start lines "above" ship
+            const canopyCenterY = canopyBottomY - canopyRadius;
 
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 1 / camera.zoom;
 
             // Shroud lines
             ctx.beginPath();
-            ctx.moveTo(0, shipNoseY); // Start from ship nose
+            ctx.moveTo(0, 0); // Start from ship center
             ctx.lineTo(-paraWidth/2, canopyBottomY);
-            ctx.moveTo(0, shipNoseY);
+            ctx.moveTo(0, 0);
             ctx.lineTo(paraWidth/2, canopyBottomY);
             ctx.stroke();
 
@@ -807,8 +814,8 @@
             ctx.fillStyle = 'white';
             ctx.beginPath();
             ctx.moveTo(0, canopyCenterY);
-            // Draw a "pie slice"
-            ctx.arc(0, canopyCenterY, canopyRadius, Math.PI + Math.PI/4, Math.PI + 3*Math.PI/4);
+            // --- MODIFIED: Fixed stripe logic to be in the top-center ---
+            ctx.arc(0, canopyCenterY, canopyRadius, -Math.PI/2 - Math.PI/8, -Math.PI/2 + Math.PI/8);
             ctx.closePath();
             ctx.fill();
 
